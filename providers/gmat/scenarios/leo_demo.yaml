@@ -1,0 +1,10 @@
+satellites:
+  - sat001
+  - sat002
+  - sat003
+  - sat004
+horizon_s: 720
+note: >
+  Used by the real GMAT adapter when GMAT is installed. The current fallback
+  generator is explicitly labelled mock and only supports tests/demo rehearsal.
+

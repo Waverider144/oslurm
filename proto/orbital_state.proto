@@ -1,0 +1,15 @@
+syntax = "proto3";
+package oslurm;
+
+message OrbitState {
+  repeated double position_eci_m = 1;
+  repeated double velocity_eci_mps = 2;
+  bool in_sunlight = 3;
+}
+
+message OrbitalNodeState {
+  string node_id = 1;
+  int64 observed_at_ms = 2;
+  OrbitState orbit = 3;
+}
+

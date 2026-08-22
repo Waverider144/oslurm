@@ -1,0 +1,11 @@
+syntax = "proto3";
+package oslurm;
+
+message PlacementCandidate {
+  string job_id = 1;
+  repeated string nodes = 2;
+  int64 start_ms = 3;
+  int64 predicted_finish_ms = 4;
+  double score = 5;
+}
+

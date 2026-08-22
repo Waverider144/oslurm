@@ -1,0 +1,13 @@
+syntax = "proto3";
+package oslurm;
+
+message PredictedResourceWindow {
+  string window_id = 1;
+  string node_id = 2;
+  int64 start_ms = 3;
+  int64 end_ms = 4;
+  double confidence = 5;
+  double ending_soc = 6;
+  double predicted_peak_temp_c = 7;
+}
+

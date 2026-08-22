@@ -1,0 +1,12 @@
+syntax = "proto3";
+package oslurm;
+
+message OrbitalJobSpec {
+  string job_id = 1;
+  int64 submitted_at_ms = 2;
+  double runtime_s = 3;
+  double deadline_s = 4;
+  double min_soc = 5;
+  double max_temp_c = 6;
+}
+

@@ -1,0 +1,5 @@
+services:
+  oslurm-demo:
+    image: ubuntu:24.04
+    command: ["bash", "-lc", "echo Slurm/GMAT images are intentionally not vendored; see docs/slurm-integration.md"]
+
