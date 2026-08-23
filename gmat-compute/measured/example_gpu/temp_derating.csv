@@ -1,0 +1,4 @@
+temperature_c,performance_factor,lower,upper
+25,1.0,0.99,1.01
+70,0.92,0.88,0.95
+80,0.74,0.67,0.79

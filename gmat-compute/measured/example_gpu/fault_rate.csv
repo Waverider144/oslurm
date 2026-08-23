@@ -1,0 +1,4 @@
+particle_flux,temperature_c,power_w,fault_rate_per_hour
+0,25,280,0.000001
+10,70,320,0.00002
+50,80,500,0.00012

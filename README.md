@@ -43,6 +43,87 @@ O-SLURM: prediction / constraints / scheduling.
 
 Slurm: queue / workload lifecycle / node execution.
 
+## Modules
+
+This repository currently has two complementary tracks:
+
+```text
+O-SLURM
+  Orbit-aware scheduling layer that turns GMAT events and predicted
+  power/thermal/link windows into Slurm placement and migration behavior.
+
+GMAT-Compute
+  Scheduler-neutral compute-payload digital twin layer for GMAT-based
+  orbital simulation. It models compute hardware, power envelopes,
+  thermal coupling, reliability, measured lab profiles, and task progress.
+```
+
+### O-SLURM
+
+O-SLURM is the scheduler-facing layer. It consumes orbital state, predicts
+resource windows, and demonstrates checkpoint/restore behavior across local
+Slurm satellite nodes.
+
+Current local demo path:
+
+```text
+GMAT REAL propagation
+        |
+        v
+O-SLURM resource windows
+        |
+        v
+Slurm REAL sat001..sat004
+        |
+        v
+checkpoint on sat002 eclipse risk
+        |
+        v
+restore on sat004
+```
+
+### GMAT-Compute
+
+[`gmat-compute/`](gmat-compute/) is an independent project inside this repo:
+
+> A scheduler-neutral compute-payload extension for orbital mission simulation.
+
+It is not tied to Slurm or O-SLURM. Its core C++ API has no GMAT dependency and
+is intended to sit between GMAT and any scheduler, optimizer, MPC/MILP planner,
+Python policy, or constellation design tool.
+
+It provides:
+
+- `ComputePayload` C++ core
+- `OrbitalEnvironmentState` adapter contract
+- measured hardware envelope provider
+- power / thermal / reliability models
+- workload-normalized task execution
+- checkpoint / restore / cancel lifecycle
+- scheduler-neutral protobuf API
+- Python provider ABI for lab-measured device models
+- real GMAT `GmatConsole` adapter
+- deterministic `make demo`
+
+Run it independently:
+
+```bash
+cd gmat-compute
+make test
+make demo
+```
+
+Current verified GMAT-Compute demo result:
+
+```text
+GMAT backend: REAL
+ECLIPSE_ENTRY
+available compute power=280 W
+throughput drops from ~420 to ~126 units/s
+Task completed=YES
+GMAT ↔ COMPUTE CO-SIM: PASS
+```
+
 ## Visualization
 
 ```bash
@@ -65,6 +146,7 @@ The console uses aerospace-style status colors:
 make test
 make demo
 make visualize
+cd gmat-compute && make test && make demo
 python3 providers/gmat/adapter.py --scenario providers/gmat/scenarios/leo_demo.yaml --output /tmp/gmat-events.json
 ```
 

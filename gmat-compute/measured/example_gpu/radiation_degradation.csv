@@ -1,0 +1,4 @@
+cumulative_dose_rad,temperature_c,performance_factor,lower,upper
+0,25,1.0,0.99,1.01
+1000,25,0.998,0.990,1.005
+10000,25,0.97,0.94,0.99
