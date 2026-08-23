@@ -1,0 +1,13 @@
+schema_version: 1
+id: generic_cpu
+accelerator:
+  model: analytic
+base_throughput_units_per_s: 80
+nominal_power_w: 120
+max_power_w: 180
+idle_power_w: 25
+thermal_limit_c: 85
+workload_efficiency:
+  generic: 1.0
+provenance:
+  source: illustrative_profile

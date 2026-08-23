@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GMAT-Compute payload profile",
+  "type": "object",
+  "required": ["schema_version", "id", "accelerator", "base_throughput_units_per_s", "max_power_w"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string" },
+    "accelerator": { "type": "object" },
+    "base_throughput_units_per_s": { "type": "number" },
+    "nominal_power_w": { "type": "number" },
+    "max_power_w": { "type": "number" },
+    "idle_power_w": { "type": "number" },
+    "thermal_limit_c": { "type": "number" },
+    "workload_efficiency": { "type": "object" },
+    "provenance": { "type": "object" }
+  }
+}

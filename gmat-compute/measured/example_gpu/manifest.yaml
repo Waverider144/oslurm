@@ -1,0 +1,49 @@
+schema_version: 1
+
+device:
+  vendor: example
+  model: experimental_gpu_01
+  revision: revA
+  serial_scope: qualification_batch_02
+
+environment:
+  vacuum: true
+
+provenance:
+  source: laboratory_measurement
+  laboratory: optional
+  test_campaign: TVAC_RAD_2027_01
+  measured_at: 2027-01-01
+  manifest_sha256: demo-not-cryptographic
+  notes: deterministic example envelope for GMAT-Compute tests
+
+units:
+  temperature: C
+  power: W
+  throughput: workload_units_per_s
+  cumulative_dose: rad
+
+axes:
+  power_throughput:
+    - temperature_c
+    - power_cap_w
+    - workload_class
+  radiation_degradation:
+    - cumulative_dose_rad
+    - temperature_c
+
+interpolation:
+  method: nearest_linear_v1
+
+extrapolation:
+  policy: clamp
+
+datasets:
+  power_throughput:
+    file: power_throughput.csv
+  temperature_derating:
+    file: temp_derating.csv
+  radiation_degradation:
+    file: radiation_degradation.csv
+  fault_rate:
+    file: fault_rate.csv
