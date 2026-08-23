@@ -1,4 +1,4 @@
-.PHONY: test demo gmat smoke
+.PHONY: test demo gmat smoke visualize
 
 test:
 	python3 -m unittest discover -s tests -p 'test_*.py'
@@ -12,3 +12,6 @@ gmat:
 
 smoke:
 	./scripts/smoke-test.sh
+
+visualize:
+	python3 -m http.server 8080 -d docs/visualization

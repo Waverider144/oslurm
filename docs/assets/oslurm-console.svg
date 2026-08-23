@@ -1,0 +1,75 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">O-SLURM closed-loop mission control preview</title>
+  <desc id="desc">Dark aerospace control console showing four satellite nodes, an eclipse warning on sat002, and a workload restore to sat004.</desc>
+  <defs>
+    <radialGradient id="earth" cx="50%" cy="48%" r="52%">
+      <stop offset="0%" stop-color="#245b7a"/>
+      <stop offset="56%" stop-color="#11364d"/>
+      <stop offset="100%" stop-color="#071827"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#101722"/>
+      <stop offset="1" stop-color="#090d15"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="1280" height="720" fill="#060911"/>
+  <path d="M0 96H1280M0 192H1280M0 288H1280M0 384H1280M0 480H1280M0 576H1280M160 0V720M320 0V720M480 0V720M640 0V720M800 0V720M960 0V720M1120 0V720" stroke="#172232" stroke-width="1" opacity=".72"/>
+  <rect x="32" y="28" width="1216" height="68" rx="6" fill="#0c121c" stroke="#25364c"/>
+  <text x="58" y="72" fill="#e6edf7" font-family="Inter, Arial, sans-serif" font-size="31" font-weight="700">O-SLURM MISSION CONTROL</text>
+  <text x="985" y="55" fill="#61d394" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700">CLOSED LOOP PASS</text>
+  <text x="985" y="78" fill="#8fa2b8" font-family="Inter, Arial, sans-serif" font-size="13">GMAT REAL / SLURM REAL</text>
+
+  <rect x="32" y="122" width="764" height="438" rx="8" fill="url(#panel)" stroke="#25364c"/>
+  <circle cx="395" cy="340" r="78" fill="url(#earth)" stroke="#3d85aa" stroke-width="2"/>
+  <circle cx="395" cy="340" r="132" stroke="#30465e" stroke-width="2"/>
+  <circle cx="395" cy="340" r="188" stroke="#26384d" stroke-width="2" stroke-dasharray="8 10"/>
+  <path d="M278 236C350 184 470 195 526 262" stroke="#36a3ff" stroke-width="3" filter="url(#glow)"/>
+  <path d="M526 262C596 348 528 470 408 492" stroke="#f5b84b" stroke-width="3" stroke-dasharray="10 10"/>
+  <path d="M247 441C282 502 354 535 425 515" stroke="#ff4d5c" stroke-width="3" stroke-dasharray="7 9"/>
+
+  <g font-family="Inter, Arial, sans-serif" font-weight="700">
+    <circle cx="270" cy="238" r="14" fill="#101722" stroke="#36a3ff" stroke-width="3"/>
+    <text x="292" y="244" fill="#36a3ff" font-size="15">sat001</text>
+    <circle cx="535" cy="266" r="14" fill="#101722" stroke="#f5b84b" stroke-width="3"/>
+    <text x="557" y="272" fill="#f5b84b" font-size="15">sat002 ECLIPSE</text>
+    <circle cx="238" cy="444" r="14" fill="#101722" stroke="#ff4d5c" stroke-width="3"/>
+    <text x="260" y="450" fill="#ff4d5c" font-size="15">sat003 LINK FAIL</text>
+    <circle cx="430" cy="512" r="14" fill="#101722" stroke="#36a3ff" stroke-width="3"/>
+    <text x="452" y="518" fill="#36a3ff" font-size="15">sat004 RESTORE</text>
+  </g>
+
+  <rect x="828" y="122" width="420" height="438" rx="8" fill="url(#panel)" stroke="#25364c"/>
+  <text x="856" y="165" fill="#e6edf7" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">Event Stream</text>
+  <g font-family="JetBrains Mono, Consolas, monospace" font-size="15">
+    <text x="856" y="210" fill="#36a3ff">+000s  GMAT propagation ready</text>
+    <text x="856" y="246" fill="#36a3ff">+002s  Slurm job=42 node=sat002</text>
+    <text x="856" y="282" fill="#f5b84b">+240s  sat002 eclipse entry</text>
+    <text x="856" y="318" fill="#f5b84b">+241s  SoC forecast 0.22 &lt; 0.35</text>
+    <text x="856" y="354" fill="#36a3ff">+243s  checkpoint progress=61%</text>
+    <text x="856" y="390" fill="#36a3ff">+245s  restore job=13 node=sat004</text>
+    <text x="856" y="426" fill="#61d394">+248s  workload completed</text>
+  </g>
+  <rect x="856" y="470" width="356" height="52" rx="5" fill="#111a26" stroke="#315171"/>
+  <text x="880" y="503" fill="#e6edf7" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">sat004 restore completed</text>
+
+  <rect x="32" y="590" width="1216" height="94" rx="8" fill="#0c121c" stroke="#25364c"/>
+  <g font-family="Inter, Arial, sans-serif">
+    <text x="58" y="628" fill="#8fa2b8" font-size="14" font-weight="700">TIMELINE</text>
+    <line x1="58" y1="656" x2="1188" y2="656" stroke="#26384d" stroke-width="6"/>
+    <circle cx="150" cy="656" r="10" fill="#36a3ff"/>
+    <circle cx="446" cy="656" r="10" fill="#f5b84b"/>
+    <circle cx="705" cy="656" r="10" fill="#36a3ff"/>
+    <circle cx="1005" cy="656" r="10" fill="#61d394"/>
+    <text x="120" y="681" fill="#e6edf7" font-size="13">submit</text>
+    <text x="405" y="681" fill="#e6edf7" font-size="13">eclipse</text>
+    <text x="662" y="681" fill="#e6edf7" font-size="13">restore</text>
+    <text x="964" y="681" fill="#e6edf7" font-size="13">complete</text>
+  </g>
+</svg>
