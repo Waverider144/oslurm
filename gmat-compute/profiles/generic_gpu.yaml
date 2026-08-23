@@ -1,0 +1,16 @@
+schema_version: 1
+id: generic_gpu
+accelerator:
+  model: envelope
+  envelope_provider:
+    type: file
+    manifest: measured/example_gpu/manifest.yaml
+base_throughput_units_per_s: 480
+nominal_power_w: 500
+max_power_w: 500
+idle_power_w: 60
+thermal_limit_c: 78
+workload_efficiency:
+  gpu_fp16: 1.0
+provenance:
+  source: illustrative_profile

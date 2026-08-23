@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package gmat_compute.v1;
+
+service ComputeSimulation {
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc GetState(GetStateRequest) returns (ComputeNodeState);
+  rpc GetForecast(ForecastRequest) returns (ComputeForecast);
+  rpc SubmitTask(SubmitTaskRequest) returns (TaskHandle);
+  rpc PlaceTask(PlaceTaskRequest) returns (PlacementResult);
+  rpc CheckpointTask(CheckpointRequest) returns (CheckpointResult);
+  rpc RestoreTask(RestoreRequest) returns (RestoreResult);
+  rpc CancelTask(CancelRequest) returns (CancelResult);
+  rpc AdvanceTo(AdvanceRequest) returns (SimulationEvents);
+}
+
+message ListNodesRequest {}
+message ListNodesResponse { repeated string node_id = 1; }
+message GetStateRequest { string node_id = 1; }
+message ForecastRequest { string node_id = 1; double horizon_s = 2; double step_s = 3; }
+message SubmitTaskRequest { ComputeTaskSpec task = 1; }
+message PlaceTaskRequest { string task_id = 1; string node_id = 2; }
+message CheckpointRequest { string task_id = 1; }
+message RestoreRequest { string task_id = 1; string node_id = 2; }
+message CancelRequest { string task_id = 1; }
+message AdvanceRequest { double simulation_time_s = 1; }
+message TaskHandle { string task_id = 1; }
+message PlacementResult { bool accepted = 1; string reason = 2; }
+message CheckpointResult { bool checkpointed = 1; }
+message RestoreResult { bool restored = 1; }
+message CancelResult { bool cancelled = 1; }
+message SimulationEvents { repeated string event = 1; }
+
+message EnvelopeValue {
+  double nominal = 1;
+  double lower_bound = 2;
+  double upper_bound = 3;
+  double confidence = 4;
+  bool extrapolated = 5;
+}
+
+message ComputeTaskSpec {
+  string id = 1;
+  double required_compute_units = 2;
+  uint64 required_memory_bytes = 3;
+  uint64 required_storage_bytes = 4;
+  uint64 input_bytes = 5;
+  uint64 output_bytes = 6;
+  bool checkpointable = 7;
+  uint64 checkpoint_size_bytes = 8;
+  double deadline_s = 9;
+  int32 priority = 10;
+  string workload_class = 11;
+}
+
+message ComputeNodeState {
+  string node_id = 1;
+  double simulation_time_s = 2;
+  bool in_sunlight = 3;
+  double power_cap_w = 4;
+  double throughput_units_per_s = 5;
+  double temperature_c = 6;
+  double failure_probability = 7;
+}
+
+message ForecastInterval {
+  double start_s = 1;
+  double end_s = 2;
+  EnvelopeValue available_compute = 3;
+  EnvelopeValue power_budget_w = 4;
+  EnvelopeValue temperature_c = 5;
+  EnvelopeValue failure_probability = 6;
+  bool in_sunlight = 7;
+}
+
+message ComputeForecast {
+  double valid_from_s = 1;
+  double valid_until_s = 2;
+  repeated ForecastInterval intervals = 3;
+}
