@@ -161,7 +161,7 @@ The demo uses real GMAT ECI JSON, disconnects ground authority, detects an eclip
 make visualize
 ```
 
-Then open `http://localhost:8080`.
+Then open `http://localhost:8081`.
 
 The console loads GMAT ECI ephemeris from `docs/visualization/gmat-events.json`, renders the Earth/orbits in a 3D attitude view, and fills the satellite selector from whatever `node_id` values are present in the data. New satellites can be inspected without changing the UI code as long as their samples are included in that JSON.
 
