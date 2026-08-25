@@ -60,7 +60,7 @@
       min-height: 76px;
       padding: 16px 20px;
       display: grid;
-      grid-template-columns: 1fr auto auto;
+      grid-template-columns: 1fr auto;
       align-items: center;
       gap: 18px;
     }
@@ -138,6 +138,7 @@
     }
 
     .main {
+      height: clamp(610px, calc(100vh - 248px), 720px);
       min-height: 0;
       display: grid;
       grid-template-columns: minmax(0, 1.55fr) minmax(360px, .9fr);
@@ -145,7 +146,8 @@
     }
 
     .orbit-panel {
-      min-height: 610px;
+      height: 100%;
+      min-height: 0;
       position: relative;
       overflow: hidden;
     }
@@ -185,21 +187,214 @@
       background: rgba(54, 163, 255, .14);
     }
 
-    .orbit-stage {
+    .earth-only.hidden {
+      display: none;
+    }
+
+    .orbit-body {
       position: absolute;
       inset: 58px 0 122px;
-      min-height: 430px;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(270px, 340px) minmax(0, 1fr);
+      gap: 14px;
+      padding: 0 18px 0;
+    }
+
+    .orbit-stage {
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
     }
 
     #orbitCanvas {
       width: 100%;
       height: 100%;
       display: block;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    #orbitCanvas.dragging {
+      cursor: grabbing;
+    }
+
+    .status-board {
+      position: absolute;
+      inset: 0;
+      display: none;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      align-content: start;
+      gap: 10px;
+      padding: 18px;
+      overflow: auto;
+      background: rgba(6, 9, 17, .92);
+    }
+
+    .status-tile {
+      min-height: 58px;
+      padding: 13px 14px;
+      border: 1px solid rgba(143, 162, 184, .18);
+      border-left-width: 4px;
+      border-radius: 6px;
+      background: rgba(12, 18, 28, .86);
+      color: var(--text);
+      font: 900 .88rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-transform: uppercase;
+    }
+
+    .status-tile.blue { border-left-color: var(--blue); }
+    .status-tile.amber { border-left-color: var(--amber); }
+    .status-tile.red { border-left-color: var(--red); }
+    .status-tile.green { border-left-color: var(--green); }
+
+    .view-controls {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      min-height: 44px;
+      padding: 8px;
+      border: 1px solid rgba(143, 162, 184, .20);
+      border-radius: 6px;
+      background: rgba(7, 12, 20, .74);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .tool-button {
+      min-width: 38px;
+      height: 28px;
+      padding: 0 9px;
+      color: var(--muted);
+      border-color: rgba(143, 162, 184, .24);
+      background: rgba(143, 162, 184, .07);
+      font-size: .68rem;
+      text-transform: uppercase;
+    }
+
+    .tool-button.active {
+      color: var(--blue);
+      border-color: rgba(54, 163, 255, .72);
+      background: rgba(54, 163, 255, .14);
+    }
+
+    .tool-label {
+      color: var(--muted);
+      font: 800 .66rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-transform: uppercase;
+    }
+
+    .command-rail {
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: minmax(190px, .95fr) minmax(160px, .75fr);
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .console-pane {
+      min-height: 0;
+      height: 100%;
+      border: 1px solid rgba(143, 162, 184, .20);
+      border-radius: 6px;
+      background: rgba(7, 12, 20, .72);
+      display: grid;
+      grid-template-rows: 36px minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .console-head {
+      padding: 9px 10px;
+      border-bottom: 1px solid rgba(143, 162, 184, .16);
+      color: var(--muted);
+      font-size: .68rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .console-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .console-actions button {
+      min-width: 34px;
+      width: 34px;
+      height: 24px;
+      padding: 0;
+      border-radius: 4px;
+      font: 900 .70rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .command-input,
+    .command-output {
+      width: 100%;
+      min-width: 0;
+      height: 100%;
+      border: 0;
+      outline: 0;
+      resize: none;
+      overflow: auto;
+      padding: 10px;
+      color: var(--text);
+      background: transparent;
+      font: 700 .72rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0;
+    }
+
+    .command-input {
+      caret-color: var(--blue);
+    }
+
+    .command-output {
+      margin: 0;
+      overflow: auto;
+      white-space: pre-wrap;
+      color: #bad0e7;
+    }
+
+    .command-input::-webkit-scrollbar,
+    .command-output::-webkit-scrollbar,
+    .event-list::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    .command-input::-webkit-scrollbar-track,
+    .command-output::-webkit-scrollbar-track,
+    .event-list::-webkit-scrollbar-track {
+      background: rgba(8, 13, 21, .85);
+    }
+
+    .command-input::-webkit-scrollbar-thumb,
+    .command-output::-webkit-scrollbar-thumb,
+    .event-list::-webkit-scrollbar-thumb {
+      background: rgba(54, 163, 255, .38);
+      border: 2px solid rgba(8, 13, 21, .85);
+      border-radius: 999px;
     }
 
     .hud {
       position: absolute;
-      left: 18px;
+      left: 376px;
       top: 76px;
       display: grid;
       gap: 8px;
@@ -216,6 +411,32 @@
       color: var(--muted);
       font: 700 .72rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
+
+    .hud-legend {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .mini-legend {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+
+    .mini-swatch {
+      width: 18px;
+      height: 8px;
+      border-radius: 2px;
+      background: var(--blue);
+      box-shadow: 0 0 10px rgba(54, 163, 255, .25);
+    }
+
+    .mini-swatch.amber { background: var(--amber); box-shadow: 0 0 10px rgba(245, 184, 75, .25); }
+    .mini-swatch.red { background: var(--red); box-shadow: 0 0 10px rgba(255, 77, 92, .25); }
+    .mini-swatch.green { background: var(--green); box-shadow: 0 0 10px rgba(97, 211, 148, .25); }
 
     .job-strip {
       position: absolute;
@@ -258,7 +479,8 @@
     }
 
     .side {
-      min-height: 610px;
+      height: 100%;
+      min-height: 0;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
       overflow: hidden;
@@ -268,7 +490,7 @@
       min-height: 0;
       padding: 0 18px 18px;
       display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto minmax(0, 1fr);
       gap: 14px;
     }
 
@@ -295,19 +517,22 @@
     .orbital-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
+      gap: 5px;
     }
 
     .kv {
-      min-height: 58px;
-      padding: 9px 10px;
+      min-height: 30px;
+      padding: 6px 9px;
       border: 1px solid rgba(143, 162, 184, .16);
       border-radius: 5px;
       background: rgba(16, 23, 34, .68);
+      display: grid;
+      grid-template-columns: minmax(82px, .72fr) minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
     }
 
     .kv span {
-      display: block;
       color: var(--muted);
       font-size: .66rem;
       font-weight: 900;
@@ -315,16 +540,18 @@
     }
 
     .kv strong {
-      display: block;
-      margin-top: 6px;
       color: var(--text);
-      font: 800 .9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font: 800 .78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      text-align: right;
     }
 
     .event-list {
+      height: 100%;
+      max-height: 100%;
+      padding-right: 4px;
       display: grid;
       align-content: start;
       gap: 10px;
@@ -352,9 +579,27 @@
     .event.red { border-left-color: var(--red); }
     .event.green { border-left-color: var(--green); }
 
+    .event-divider {
+      min-height: 28px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 9px;
+      align-items: center;
+      color: var(--muted);
+      font: 800 .66rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-transform: uppercase;
+    }
+
+    .event-divider::before,
+    .event-divider::after {
+      content: "";
+      height: 1px;
+      background: rgba(143, 162, 184, .26);
+    }
+
     .legend {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 8px;
     }
 
@@ -381,6 +626,37 @@
 
     .swatch.amber { background: var(--amber); }
     .swatch.red { background: var(--red); }
+    .swatch.green { background: var(--green); }
+
+    .event-filters {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .event-filter {
+      min-height: 34px;
+      padding: 8px 9px;
+      border: 1px solid rgba(143, 162, 184, .18);
+      border-radius: 5px;
+      background: rgba(7, 12, 20, .52);
+      color: var(--muted);
+      font-size: .67rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .event-filter input {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--blue);
+      margin: 0;
+    }
 
     .bottom {
       display: grid;
@@ -454,17 +730,22 @@
 
     @media (max-width: 1100px) {
       .shell { padding: 16px; }
-      .topbar, .main, .bottom { grid-template-columns: 1fr; }
+      .topbar, .bottom { grid-template-columns: 1fr; }
+      .main { grid-template-columns: 1fr; height: auto; }
       .topbar { align-items: stretch; }
-      .orbit-panel, .side { min-height: 620px; }
+      .orbit-panel, .side { height: 620px; }
+      .orbit-body { grid-template-columns: 1fr; }
+      .hud { left: 26px; top: 318px; }
       .progress { width: 190px; }
     }
 
     @media (max-width: 620px) {
       .shell { padding: 10px; }
       .job-strip { grid-template-columns: 1fr; }
-      .legend, .orbital-grid { grid-template-columns: 1fr; }
-      .orbit-panel, .side { min-height: 680px; }
+      .legend, .orbital-grid, .event-filters { grid-template-columns: 1fr; }
+      .orbit-panel, .side { height: 760px; }
+      .orbit-body { inset-bottom: 148px; padding: 0 10px; }
+      .command-rail { grid-template-rows: minmax(170px, .9fr) minmax(135px, .65fr); }
     }
   </style>
 </head>
@@ -476,7 +757,6 @@
         <p class="kicker">GMAT ECI ephemeris / 3D orbital view / Slurm execution</p>
       </div>
       <div class="status-pill" id="loopStatus">Armed</div>
-      <button id="runButton" type="button">Run Demo</button>
     </header>
 
     <section class="main" aria-label="O-SLURM closed loop visualization">
@@ -486,20 +766,56 @@
           <div class="view-toggle" aria-label="Camera view controls">
             <button type="button" data-view="iso" class="active">ISO</button>
             <button type="button" data-view="eci">ECI</button>
-            <button type="button" data-view="polar">POLAR</button>
+            <button type="button" data-view="status">LIST</button>
           </div>
           <span id="clock">T+000s</span>
         </div>
-        <div class="orbit-stage">
-          <canvas id="orbitCanvas" aria-label="3D Earth and GMAT orbit visualization"></canvas>
+        <div class="orbit-body">
+          <div class="command-rail" aria-label="Interactive satellite command line">
+            <section class="console-pane">
+              <div class="console-head">
+                <span>Command Uplink</span>
+                <div class="console-actions">
+                  <button id="sendCommand" type="button" title="Send command">▶</button>
+                  <button id="resetCommand" type="button" title="Reset command">↺</button>
+                </div>
+              </div>
+              <textarea id="commandInput" class="command-input" spellcheck="false"></textarea>
+            </section>
+            <section class="console-pane">
+              <div class="console-head">
+                <span>Execution Output</span>
+                <span id="commandState">idle</span>
+              </div>
+              <pre id="commandOutput" class="command-output"></pre>
+            </section>
+          </div>
+          <div class="orbit-stage">
+            <canvas id="orbitCanvas" aria-label="3D Earth and GMAT orbit visualization"></canvas>
+            <div class="status-board" id="statusBoard" aria-label="Satellite status list"></div>
+            <div class="view-controls earth-only" id="viewControls" aria-label="Earth view controls">
+              <div class="tool-group">
+                <button class="tool-button active" id="gridToggle" type="button">Grid</button>
+                <button class="tool-button active" data-pointer-mode="rotate" type="button">Rotate</button>
+                <button class="tool-button" data-pointer-mode="pan" type="button">Pan</button>
+                <button class="tool-button" data-pointer-mode="select" type="button">Select</button>
+              </div>
+              <span class="tool-label" id="pointerHint">left drag rotate / ctrl drag pan / wheel zoom</span>
+            </div>
+          </div>
         </div>
-        <div class="hud">
+        <div class="hud earth-only" id="orbitHud">
           <div class="hud-line" id="dataSource">loading GMAT ephemeris</div>
-          <div class="hud-line">blue=change amber=degraded red=failed</div>
+          <div class="hud-line hud-legend">
+            <span class="mini-legend"><span class="mini-swatch"></span>Change</span>
+            <span class="mini-legend"><span class="mini-swatch amber"></span>Degraded</span>
+            <span class="mini-legend"><span class="mini-swatch red"></span>Failed</span>
+            <span class="mini-legend"><span class="mini-swatch green"></span>Compute</span>
+          </div>
         </div>
         <div class="job-strip">
           <div>
-            <p class="job-title" id="jobTitle">job=42 running on sat002</p>
+            <p class="job-title" id="jobTitle">job=42 running on sat001</p>
             <p class="job-meta" id="jobMeta">checkpoint supported / runtime 180s / reserve SoC 0.35</p>
           </div>
           <div class="progress" aria-label="Job progress"><span id="jobProgress"></span></div>
@@ -524,6 +840,14 @@
             <div class="legend-item"><span class="swatch"></span>Change</div>
             <div class="legend-item"><span class="swatch amber"></span>Degraded</div>
             <div class="legend-item"><span class="swatch red"></span>Failed</div>
+            <div class="legend-item"><span class="swatch green"></span>Compute</div>
+          </div>
+
+          <div class="event-filters" aria-label="Event filters">
+            <label class="event-filter"><input type="checkbox" value="blue" checked>Change</label>
+            <label class="event-filter"><input type="checkbox" value="amber" checked>Degraded</label>
+            <label class="event-filter"><input type="checkbox" value="red" checked>Failed</label>
+            <label class="event-filter"><input type="checkbox" value="green">Compute</label>
           </div>
 
           <div class="event-list" id="eventList"></div>
@@ -549,28 +873,27 @@
     const fallbackEphemeris = {
       samples: [
         { node_id: "sat001", timestamp_ms: 0, position_eci_m: [-1201819, 6811702, 237869], velocity_eci_mps: [-7473, -1317, -45], in_sunlight: true },
-        { node_id: "sat002", timestamp_ms: 0, position_eci_m: [-1201819, 6811702, 237869], velocity_eci_mps: [-7473, -1317, -45], in_sunlight: true },
-        { node_id: "sat003", timestamp_ms: 0, position_eci_m: [6815854, 1201086, 41942], velocity_eci_mps: [-1317, 7469, 260], in_sunlight: true },
-        { node_id: "sat004", timestamp_ms: 0, position_eci_m: [1201819, -6811702, -237869], velocity_eci_mps: [7473, 1317, 45], in_sunlight: true }
+        { node_id: "sat002", timestamp_ms: 0, position_eci_m: [-6815854, -1201086, -41942], velocity_eci_mps: [1317, -7469, -260], in_sunlight: false },
+        { node_id: "sat003", timestamp_ms: 0, position_eci_m: [1201819, -6811702, -237869], velocity_eci_mps: [7473, 1317, 45], in_sunlight: true },
+        { node_id: "sat004", timestamp_ms: 0, position_eci_m: [6815854, 1201086, 41942], velocity_eci_mps: [-1317, 7469, 260], in_sunlight: true }
       ],
       events: []
     };
 
     const demoSteps = [
-      { t: "T+000s", tone: "blue", text: "GMAT ephemeris loaded", job: "job=42 running on sat002", meta: "checkpoint supported / runtime 180s / reserve SoC 0.35", progress: "12%", status: "Nominal", focus: "sat002", index: 0 },
-      { t: "T+002s", tone: "blue", text: "Slurm allocated job=42 on sat002", progress: "30%", focus: "sat002", index: 1 },
-      { t: "T+240s", tone: "amber", text: "sat002 eclipse entry", progress: "61%", status: "Degraded", focus: "sat002", index: 4 },
-      { t: "T+241s", tone: "amber", text: "sat002 predicted SoC 0.22 below reserve", job: "job=42 checkpointing", meta: "placement infeasible / migration candidate sat004", focus: "sat002", index: 4 },
+      { t: "T+000s", tone: "blue", source: "system", text: "GMAT ephemeris loaded", job: "job=42 running on sat001", meta: "checkpoint supported / runtime 180s / reserve SoC 0.35", progress: "12%", status: "Nominal", focus: "sat001", index: 0 },
+      { t: "T+002s", tone: "blue", source: "scheduler", text: "scheduler allocated job=42 on sat001", progress: "30%", focus: "sat001", index: 1 },
+      { t: "T+240s", tone: "amber", text: "sat001 eclipse entry", progress: "61%", status: "Degraded", focus: "sat001", index: 4 },
+      { t: "T+241s", tone: "amber", text: "sat001 predicted SoC 0.22 below reserve", job: "job=42 checkpointing", meta: "placement infeasible / migration candidate sat004", focus: "sat001", index: 4 },
       { t: "T+242s", tone: "red", text: "sat003 crosslink failed", focus: "sat003", index: 4 },
-      { t: "T+243s", tone: "blue", text: "checkpoint saved progress=61%", job: "job=42 restore pending", meta: "scheduler selected sat004", focus: "sat004", index: 5 },
-      { t: "T+245s", tone: "blue", text: "Slurm submitted restore job=13 on sat004", job: "job=42 restoring on sat004", progress: "82%", status: "Migrating", focus: "sat004", index: 5 },
+      { t: "T+243s", tone: "blue", source: "scheduler", text: "scheduler selected sat004 after checkpoint", job: "job=42 restore pending", meta: "scheduler selected sat004", focus: "sat004", index: 5 },
+      { t: "T+245s", tone: "blue", source: "scheduler", text: "scheduler submitted restore job=13 on sat004", job: "job=42 restoring on sat004", progress: "82%", status: "Migrating", focus: "sat004", index: 5 },
       { t: "T+248s", tone: "green", text: "restore job=13 completed", job: "job=42 completed on sat004", meta: "GMAT REAL / Slurm REAL / closed loop PASS", progress: "100%", status: "Pass", focus: "sat004", index: 6 }
     ];
 
     const canvas = document.querySelector("#orbitCanvas");
     const ctx = canvas.getContext("2d");
     const eventList = document.querySelector("#eventList");
-    const runButton = document.querySelector("#runButton");
     const clock = document.querySelector("#clock");
     const loopStatus = document.querySelector("#loopStatus");
     const jobTitle = document.querySelector("#jobTitle");
@@ -581,14 +904,33 @@
     const nodeCards = document.querySelector("#nodeCards");
     const dataSource = document.querySelector("#dataSource");
     const viewButtons = document.querySelectorAll("[data-view]");
+    const statusBoard = document.querySelector("#statusBoard");
+    const earthOnlyElements = document.querySelectorAll(".earth-only");
+    const gridToggle = document.querySelector("#gridToggle");
+    const pointerModeButtons = document.querySelectorAll("[data-pointer-mode]");
+    const pointerHint = document.querySelector("#pointerHint");
+    const eventFilters = document.querySelectorAll(".event-filter input");
+    const commandInput = document.querySelector("#commandInput");
+    const commandOutput = document.querySelector("#commandOutput");
+    const commandState = document.querySelector("#commandState");
+    const sendCommand = document.querySelector("#sendCommand");
+    const resetCommand = document.querySelector("#resetCommand");
 
     let ephemeris = fallbackEphemeris;
     let byNode = new Map();
     let nodes = [];
-    let selectedNode = "sat002";
+    let selectedNode = "sat001";
     let activeIndex = 0;
-    let activeTone = new Map([["sat002", "blue"]]);
+    let activeTone = new Map([["sat001", "blue"]]);
     let cameraView = "iso";
+    let viewPan = { x: 0, y: 0 };
+    let viewZoom = 1;
+    let viewAngles = { yaw: 0.72, pitch: -0.55 };
+    let pointerMode = "rotate";
+    let gridEnabled = true;
+    let dragState = null;
+    let eventStore = [];
+    let earthTextureData = null;
 
     function kmVec(sample) {
       return {
@@ -651,6 +993,28 @@
       return samples[Math.min(index, samples.length - 1)] || samples[0];
     }
 
+    function sampleAtIndex(index = activeIndex) {
+      return sampleFor(selectedNode, index) || ephemeris.samples?.[0];
+    }
+
+    function formatElapsed(seconds) {
+      return `T+${String(Math.max(0, Math.round(seconds))).padStart(3, "0")}s`;
+    }
+
+    function utcForIndex(index = activeIndex) {
+      const sample = sampleAtIndex(index);
+      return sample ? new Date(sample.timestamp_ms).toISOString().replace(".000Z", "Z") : "UTC unavailable";
+    }
+
+    function utcForElapsed(seconds) {
+      const epoch = ephemeris.samples?.[0]?.timestamp_ms || sampleAtIndex()?.timestamp_ms || Date.now();
+      return new Date(epoch + Math.max(0, Math.round(seconds)) * 1000).toISOString().replace(".000Z", "Z");
+    }
+
+    function setClock(elapsedSeconds = null) {
+      clock.textContent = elapsedSeconds === null ? utcForIndex(activeIndex) : utcForElapsed(elapsedSeconds);
+    }
+
     function updateInspector() {
       const sample = sampleFor(selectedNode);
       if (!sample) return;
@@ -668,6 +1032,191 @@
         ["ECI sample", `#${activeIndex}`]
       ];
       orbitalGrid.innerHTML = rows.map(([k, v]) => `<div class="kv"><span>${k}</span><strong>${v}</strong></div>`).join("");
+      updateCommandTemplate();
+    }
+
+    function slurmTemplate(node) {
+      const sample = sampleFor(node);
+      if (!sample) return "";
+      const el = orbitalElements(sample);
+      const cpus = node === "sat001" ? 2 : 1;
+      const mem = node === "sat004" ? 768 : 512;
+      const minutes = node === "sat001" ? 3 : 2;
+      const eci = sample.position_eci_m.map((v) => Math.round(v)).join(",");
+      return [
+        "#!/usr/bin/env bash",
+        `#SBATCH --job-name=oslurm-${node}-axb`,
+        "#SBATCH --nodelist=sat[001-004]",
+        "#SBATCH --ntasks=4",
+        `#SBATCH --cpus-per-task=${cpus}`,
+        `#SBATCH --mem=${mem}M`,
+        `#SBATCH --time=00:0${minutes}:00`,
+        "#SBATCH --output=.oslurm-state/slurm-%j.out",
+        "",
+        `export OSLURM_NODE=${node}`,
+        "export OSLURM_TARGETS=sat001,sat002,sat003,sat004",
+        "export OSLURM_MATRIX_DIM=4096",
+        "export OSLURM_SOLVER=cg",
+        "export OSLURM_MAX_ITER=96",
+        "export OSLURM_TOL=1e-8",
+        `export OSLURM_ECI_M=${eci}`,
+        `export OSLURM_A_KM=${el.a.toFixed(1)}`,
+        `export OSLURM_ALTITUDE_KM=${el.altitude.toFixed(1)}`,
+        `export OSLURM_INCLINATION_DEG=${el.inc.toFixed(2)}`,
+        `export OSLURM_SUNLIGHT=${el.sunlight ? "1" : "0"}`,
+        "",
+        "python3 - <<'PY'",
+        "import os",
+        "import math",
+        "node = os.environ['OSLURM_NODE']",
+        "dim = int(os.environ['OSLURM_MATRIX_DIM'])",
+        "tol = float(os.environ['OSLURM_TOL'])",
+        "residual = 1.0",
+        "print(f'uplink accepted by {node}: solve Ax=b dim={dim}')",
+        "for iteration in range(0, int(os.environ['OSLURM_MAX_ITER']) + 1, 12):",
+        "    residual = max(tol, math.exp(-iteration / 13.5))",
+        "    print(f'iter={iteration:03d} residual={residual:.3e}')",
+        "print('solver status: converged')",
+        "PY"
+      ].join("\n");
+    }
+
+    function updateCommandTemplate(force = false) {
+      if (!commandInput || !selectedNode) return;
+      const currentNodeLine = commandInput.value.match(/^export OSLURM_NODE=(.+)$/m);
+      const currentNode = currentNodeLine ? currentNodeLine[1].trim() : "";
+      if (force || !commandInput.value.trim() || currentNode !== selectedNode) {
+        commandInput.value = slurmTemplate(selectedNode);
+      }
+    }
+
+    function parseDirective(text, name) {
+      const match = text.match(new RegExp(`^#SBATCH\\s+--${name}=([^\\n]+)`, "m"));
+      return match ? match[1].trim() : "";
+    }
+
+    function parseEnv(text, name) {
+      const match = text.match(new RegExp(`^export\\s+${name}=([^\\n]+)`, "m"));
+      return match ? match[1].replace(/^["']|["']$/g, "").trim() : "";
+    }
+
+    function expandNodeList(value) {
+      const compact = value.match(/^(.*)\[(\d+)-(\d+)\]$/);
+      if (!compact) return value.split(",").map((node) => node.trim()).filter(Boolean);
+      const [, prefix, start, end] = compact;
+      const width = start.length;
+      const first = Number(start);
+      const last = Number(end);
+      const expanded = [];
+      for (let i = first; i <= last; i += 1) expanded.push(`${prefix}${String(i).padStart(width, "0")}`);
+      return expanded;
+    }
+
+    let commandTimers = [];
+
+    function clearCommandTimers() {
+      commandTimers.forEach((timer) => window.clearTimeout(timer));
+      commandTimers = [];
+      sendCommand.disabled = false;
+    }
+
+    function appendOutput(line) {
+      commandOutput.textContent += `${line}\n`;
+      commandOutput.scrollTop = commandOutput.scrollHeight;
+    }
+
+    function buildMatrixReplay(script, targets, nodelist, cpus, mem, timeLimit) {
+      const taskCount = parseDirective(script, "ntasks") || String(targets.length);
+      const dim = parseEnv(script, "OSLURM_MATRIX_DIM") || "4096";
+      const solver = parseEnv(script, "OSLURM_SOLVER") || "cg";
+      const maxIter = Number(parseEnv(script, "OSLURM_MAX_ITER") || 96);
+      const tol = parseEnv(script, "OSLURM_TOL") || "1e-8";
+      const steps = [
+        { dt: 0, tone: "blue", source: "execution", focus: targets[0], progress: "4%", line: `$ osbatch --parallel --targets ${targets.join(",")}` },
+        { dt: 360, tone: "blue", source: "execution", progress: "9%", line: `parsed: nodelist=${nodelist} ntasks=${taskCount} cpus=${cpus} mem=${mem} time=${timeLimit}` },
+        { dt: 760, tone: "blue", source: "execution", progress: "14%", line: `slurm: sbatch --nodelist=${nodelist} --ntasks=${taskCount} --cpus-per-task=${cpus} --mem=${mem}` },
+        { dt: 1180, tone: "blue", source: "execution", progress: "20%", line: `uplink: dispatch Ax=b solver=${solver} dim=${dim} tol=${tol}` }
+      ];
+      targets.forEach((target, index) => {
+        steps.push({
+          dt: 1540 + index * 180,
+          tone: "blue",
+          source: "execution",
+          focus: target,
+          progress: `${24 + index * 4}%`,
+          line: `satellite ${target}: lease accepted / matrix shard=${index + 1}/${targets.length}`
+        });
+      });
+      for (let iter = 0; iter <= maxIter; iter += 12) {
+        const residual = Math.max(Number(tol), Math.exp(-iter / 13.5));
+        const pct = Math.min(86, 32 + Math.round((iter / Math.max(1, maxIter)) * 52));
+        const focus = targets[Math.floor(iter / 12) % targets.length] || selectedNode;
+        steps.push({
+          dt: 2400 + iter * 70,
+          tone: residual < 0.02 ? "green" : "blue",
+          source: "compute",
+          focus,
+          progress: `${pct}%`,
+          index: Math.min((byNode.get(focus) || []).length - 1, Math.floor(iter / 12) + 1),
+          line: `solve: iter=${String(iter).padStart(3, "0")} residual=${residual.toExponential(3)} active=${focus}`
+        });
+      }
+      steps.push(
+        { dt: 2400 + (maxIter + 10) * 70, tone: "amber", source: "orbital", focus: "sat001", progress: "88%", index: 4, line: "orbital event: sat001 eclipse entry / power margin degraded" },
+        { dt: 2400 + (maxIter + 18) * 70, tone: "blue", source: "scheduler", focus: "sat004", progress: "93%", index: 5, line: "scheduler: rebalance remaining Krylov updates to sat004" },
+        { dt: 2400 + (maxIter + 26) * 70, tone: "green", source: "compute", focus: "sat004", progress: "100%", index: 6, line: "reduce: residual=8.742e-09 / solver status: converged" },
+        { dt: 2400 + (maxIter + 31) * 70, tone: "green", source: "compute", progress: "100%", line: "exit_code=0" }
+      );
+      return steps;
+    }
+
+    function runCommandSimulation() {
+      clearCommandTimers();
+      const script = commandInput.value;
+      const nodelist = parseDirective(script, "nodelist") || selectedNode;
+      const envTargets = parseEnv(script, "OSLURM_TARGETS");
+      const targets = envTargets ? envTargets.split(",").map((node) => node.trim()).filter(Boolean) : expandNodeList(nodelist);
+      const cpus = parseDirective(script, "cpus-per-task") || "1";
+      const mem = parseDirective(script, "mem") || "512M";
+      const timeLimit = parseDirective(script, "time") || "00:02:00";
+      const replay = buildMatrixReplay(script, targets, nodelist, cpus, mem, timeLimit);
+      commandOutput.textContent = "";
+      commandState.textContent = "running";
+      sendCommand.disabled = true;
+      loopStatus.textContent = "Executing";
+      jobTitle.textContent = `parallel command on ${targets.length} satellites`;
+      jobMeta.textContent = `Ax=b matrix solve / ${targets.join(", ")}`;
+      jobProgress.style.width = "0%";
+      eventStore = [];
+      renderEvents();
+      addEventDivider(`START UTC ${utcForElapsed(0)}`);
+      addEvent({ t: formatElapsed(0), tone: "blue", source: "scheduler", text: `scheduler accepted Ax=b command on ${targets.length} satellites` });
+      replay.forEach((step, idx) => {
+        const timer = window.setTimeout(() => {
+          const elapsedS = Math.round(step.dt / 100);
+          if (step.progress) jobProgress.style.width = step.progress;
+          if (Number.isInteger(step.index)) activeIndex = Math.max(0, step.index);
+          setClock(elapsedS);
+          if (step.focus) {
+            selectedNode = step.focus;
+            satelliteSelect.value = selectedNode;
+            setNodeTone(step.focus, step.tone, step.tone === "amber" ? "eclipse" : step.tone === "green" ? "done" : "solve");
+          }
+          appendOutput(step.line);
+          if (idx % 3 === 0 || step.tone !== "blue") addEvent({ t: formatElapsed(elapsedS), tone: step.tone, source: step.source, text: step.line.replace(/^\$ /, "") });
+          updateInspector();
+          render();
+          if (idx === replay.length - 1) {
+            commandState.textContent = "complete";
+            loopStatus.textContent = "Pass";
+            addEventDivider(`END UTC ${utcForElapsed(elapsedS)}`);
+            addEvent({ t: formatElapsed(elapsedS), tone: "blue", source: "scheduler", text: "scheduler completed Ax=b command" });
+            sendCommand.disabled = false;
+            commandTimers = [];
+          }
+        }, step.dt);
+        commandTimers.push(timer);
+      });
     }
 
     function setupControls() {
@@ -676,48 +1225,139 @@
       satelliteSelect.addEventListener("change", () => {
         selectedNode = satelliteSelect.value;
         updateInspector();
+        updateCommandTemplate(true);
         render();
       });
       viewButtons.forEach((button) => {
         button.addEventListener("click", () => {
           cameraView = button.dataset.view;
+          applyPresetView(cameraView);
           viewButtons.forEach((b) => b.classList.toggle("active", b === button));
           render();
         });
       });
+      eventFilters.forEach((filter) => filter.addEventListener("change", renderEvents));
+      gridToggle.addEventListener("click", () => {
+        gridEnabled = !gridEnabled;
+        gridToggle.classList.toggle("active", gridEnabled);
+        render();
+      });
+      pointerModeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          pointerMode = button.dataset.pointerMode;
+          pointerModeButtons.forEach((btn) => btn.classList.toggle("active", btn === button));
+          updatePointerHint();
+        });
+      });
+    }
+
+    function applyPresetView(view) {
+      if (view === "iso") viewAngles = { yaw: 0.72, pitch: -0.55 };
+      if (view === "eci") viewAngles = { yaw: 0.00, pitch: -0.18 };
+    }
+
+    function updatePointerHint() {
+      const labels = {
+        rotate: "left drag rotate / ctrl drag pan / wheel zoom",
+        pan: "left drag pan / wheel zoom",
+        select: "left click select satellite / ctrl drag pan / wheel zoom"
+      };
+      pointerHint.textContent = labels[pointerMode];
     }
 
     function makeNodeCards() {
-      const soc = { sat001: "0.58", sat002: "0.42", sat003: "0.51", sat004: "0.55" };
-      const temp = { sat001: "52C", sat002: "58C", sat003: "47C", sat004: "48C" };
+      const soc = { sat001: "0.42", sat002: "0.58", sat003: "0.51", sat004: "0.55" };
+      const temp = { sat001: "58C", sat002: "52C", sat003: "47C", sat004: "48C" };
       nodeCards.innerHTML = nodes.map((node) => `
         <article class="node" data-card="${node}">
-          <div class="node-head"><h3>${node}</h3><span class="tag ${node === "sat002" ? "blue" : ""}">${node === "sat002" ? "alloc" : "idle"}</span></div>
-          <div class="metric"><span>SoC</span><div class="bar ${node === "sat002" ? "amber" : ""}" style="--value: ${Math.round((Number(soc[node] || .54)) * 100)}%"><span></span></div><b>${soc[node] || "0.54"}</b></div>
+          <div class="node-head"><h3>${node}</h3><span class="tag ${node === "sat001" ? "blue" : ""}">${node === "sat001" ? "alloc" : "idle"}</span></div>
+          <div class="metric"><span>SoC</span><div class="bar ${node === "sat001" ? "amber" : ""}" style="--value: ${Math.round((Number(soc[node] || .54)) * 100)}%"><span></span></div><b>${soc[node] || "0.54"}</b></div>
           <div class="metric"><span>Thermal</span><div class="bar" style="--value: 44%"><span></span></div><b>${temp[node] || "50C"}</b></div>
         </article>
       `).join("");
+      renderStatusBoard();
     }
 
     function addEvent(step) {
-      const item = document.createElement("div");
-      item.className = `event ${step.tone}`;
-      item.innerHTML = `<span class="time">${step.t}</span><span>${step.text}</span>`;
-      eventList.prepend(item);
+      if (step.tone === "blue" && step.source !== "scheduler") return;
+      eventStore.push(step);
+      renderEvents();
+    }
+
+    function addEventDivider(text) {
+      eventStore.push({ kind: "divider", text });
+      renderEvents();
+    }
+
+    function enabledEventTones() {
+      return new Set([...eventFilters].filter((filter) => filter.checked).map((filter) => filter.value));
+    }
+
+    function renderEvents() {
+      const enabled = enabledEventTones();
+      eventList.innerHTML = "";
+      [...eventStore].reverse().filter((step) => step.kind === "divider" || enabled.has(step.tone)).forEach((step) => {
+        if (step.kind === "divider") {
+          const divider = document.createElement("div");
+          divider.className = "event-divider";
+          divider.textContent = step.text;
+          eventList.appendChild(divider);
+          return;
+        }
+        const item = document.createElement("div");
+        item.className = `event ${step.tone}`;
+        item.innerHTML = `<span class="time">${step.t}</span><span>${step.text}</span>`;
+        eventList.appendChild(item);
+      });
     }
 
     function setNodeTone(node, tone, label) {
       if (!node) return;
       activeTone.set(node, tone);
       const card = document.querySelector(`[data-card="${node}"]`);
-      if (!card) return;
-      const tag = card.querySelector(".tag");
-      tag.className = `tag ${tone}`;
-      tag.textContent = label;
+      if (card) {
+        const tag = card.querySelector(".tag");
+        tag.className = `tag ${tone}`;
+        tag.textContent = label;
+      }
+      renderStatusBoard();
+    }
+
+    function renderStatusBoard() {
+      statusBoard.innerHTML = nodes.map((node) => {
+        const tone = activeTone.get(node) || "green";
+        return `<div class="status-tile ${tone}">${node}</div>`;
+      }).join("");
+    }
+
+    function pickSatellite(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      const cx = w * .5 + viewPan.x;
+      const cy = h * .52 + viewPan.y;
+      const scale = Math.min(w, h) * .34 * viewZoom / 7300;
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      let nearest = null;
+      nodes.forEach((node) => {
+        const sample = sampleFor(node);
+        if (!sample) return;
+        const p = project(kmVec(sample).r, scale, cx, cy);
+        const distance = Math.hypot(p.x - x, p.y - y);
+        if (!nearest || distance < nearest.distance) nearest = { node, distance };
+      });
+      if (nearest && nearest.distance < 28) {
+        selectedNode = nearest.node;
+        satelliteSelect.value = selectedNode;
+        updateInspector();
+        render();
+      }
     }
 
     function applyStep(step) {
-      clock.textContent = step.t;
+      const elapsed = Number((step.t || "").match(/T\+(\d+)s/)?.[1] || 0);
+      setClock(elapsed);
       if (step.status) loopStatus.textContent = step.status;
       if (step.job) jobTitle.textContent = step.job;
       if (step.meta) jobMeta.textContent = step.meta;
@@ -733,29 +1373,26 @@
       render();
     }
 
-    function resetDemo() {
+    function resetConsole() {
+      clearCommandTimers();
+      eventStore = [];
       eventList.innerHTML = "";
-      clock.textContent = "T+000s";
+      commandOutput.textContent = "";
+      commandState.textContent = "idle";
+      setClock(0);
       loopStatus.textContent = "Armed";
-      jobTitle.textContent = "job=42 running on sat002";
+      jobTitle.textContent = "job=42 running on sat001";
       jobMeta.textContent = "checkpoint supported / runtime 180s / reserve SoC 0.35";
       jobProgress.style.width = "61%";
       activeIndex = 0;
-      activeTone = new Map([["sat002", "blue"]]);
+      activeTone = new Map([["sat001", "blue"]]);
+      viewPan = { x: 0, y: 0 };
+      viewZoom = 1;
+      applyPresetView(cameraView);
       makeNodeCards();
       updateInspector();
+      updateCommandTemplate(true);
       render();
-    }
-
-    function runDemo() {
-      resetDemo();
-      runButton.disabled = true;
-      demoSteps.forEach((step, index) => {
-        window.setTimeout(() => {
-          applyStep(step);
-          if (index === demoSteps.length - 1) runButton.disabled = false;
-        }, index * 620);
-      });
     }
 
     function resizeCanvas() {
@@ -770,15 +1407,57 @@
 
     function rotate(point) {
       const [x, y, z] = point;
-      let ax = -0.55, ay = 0.72, az = 0.18;
-      if (cameraView === "eci") { ax = -0.18; ay = 0.05; az = 0; }
-      if (cameraView === "polar") { ax = -1.35; ay = 0.18; az = 0; }
+      const ax = viewAngles.pitch;
+      const ay = viewAngles.yaw;
+      const az = cameraView === "eci" ? 0 : 0.18;
       const cx = Math.cos(ax), sx = Math.sin(ax);
       const cy = Math.cos(ay), sy = Math.sin(ay);
       const cz = Math.cos(az), sz = Math.sin(az);
       let py = y * cx - z * sx, pz = y * sx + z * cx, px = x;
       let qx = px * cy + pz * sy, qz = -px * sy + pz * cy, qy = py;
       return [qx * cz - qy * sz, qx * sz + qy * cz, qz];
+    }
+
+    function inverseRotate(point) {
+      let [x, y, z] = point;
+      const ax = -viewAngles.pitch;
+      const ay = -viewAngles.yaw;
+      const az = cameraView === "eci" ? 0 : -0.18;
+      const cz = Math.cos(az), sz = Math.sin(az);
+      let px = x * cz - y * sz;
+      let py = x * sz + y * cz;
+      let pz = z;
+      const cy = Math.cos(ay), sy = Math.sin(ay);
+      const qx = px * cy + pz * sy;
+      const qz = -px * sy + pz * cy;
+      const qy = py;
+      const cx = Math.cos(ax), sx = Math.sin(ax);
+      return [qx, qy * cx - qz * sx, qy * sx + qz * cx];
+    }
+
+    function loadEarthTexture() {
+      const image = new Image();
+      image.onload = () => {
+        const textureCanvas = document.createElement("canvas");
+        textureCanvas.width = image.naturalWidth;
+        textureCanvas.height = image.naturalHeight;
+        const textureCtx = textureCanvas.getContext("2d");
+        textureCtx.drawImage(image, 0, 0);
+        earthTextureData = textureCtx.getImageData(0, 0, textureCanvas.width, textureCanvas.height);
+        render();
+      };
+      image.src = "earth-blue-marble.jpg";
+    }
+
+    function sampleEarthTexture(lon, lat) {
+      if (!earthTextureData) return [36, 91, 122];
+      const { width, height, data } = earthTextureData;
+      const u = ((lon + Math.PI) / (Math.PI * 2) * width + width) % width;
+      const v = clamp((Math.PI / 2 - lat) / Math.PI * height, 0, height - 1);
+      const x = Math.floor(u);
+      const y = Math.floor(v);
+      const idx = (y * width + x) * 4;
+      return [data[idx], data[idx + 1], data[idx + 2]];
     }
 
     function project(point, scale, cx, cy) {
@@ -788,41 +1467,112 @@
       return { x: cx + x * scale * perspective, y: cy - y * scale * perspective, z, perspective };
     }
 
+    function projectRotated(rotated, scale, cx, cy) {
+      const [x, y, z] = rotated;
+      const depth = 17000;
+      const perspective = depth / (depth + z);
+      return { x: cx + x * scale * perspective, y: cy - y * scale * perspective, z };
+    }
+
+    function earthPoint(lonDeg, latDeg) {
+      const lon = lonDeg * Math.PI / 180;
+      const lat = latDeg * Math.PI / 180;
+      const r = EARTH_RADIUS_KM;
+      return [
+        r * Math.cos(lat) * Math.cos(lon),
+        r * Math.cos(lat) * Math.sin(lon),
+        r * Math.sin(lat)
+      ];
+    }
+
+    function drawSurfaceLine(points, scale, cx, cy) {
+      let drawing = false;
+      ctx.beginPath();
+      points.forEach((point) => {
+        const rotated = rotate(point);
+        if (rotated[2] < 0) {
+          drawing = false;
+          return;
+        }
+        const p = projectRotated(rotated, scale, cx, cy);
+        if (!drawing) {
+          ctx.moveTo(p.x, p.y);
+          drawing = true;
+        } else {
+          ctx.lineTo(p.x, p.y);
+        }
+      });
+      ctx.stroke();
+    }
+
+    function drawEarthGrid(scale, cx, cy) {
+      ctx.strokeStyle = "rgba(230,237,247,.20)";
+      ctx.lineWidth = 1;
+      for (let lat = -60; lat <= 60; lat += 30) {
+        const points = [];
+        for (let lon = -180; lon <= 180; lon += 3) points.push(earthPoint(lon, lat));
+        drawSurfaceLine(points, scale, cx, cy);
+      }
+      for (let lon = -180; lon < 180; lon += 30) {
+        const points = [];
+        for (let lat = -87; lat <= 87; lat += 3) points.push(earthPoint(lon, lat));
+        drawSurfaceLine(points, scale, cx, cy);
+      }
+      ctx.strokeStyle = "rgba(54,163,255,.28)";
+      ctx.lineWidth = 1.4;
+      const equator = [];
+      for (let lon = -180; lon <= 180; lon += 3) equator.push(earthPoint(lon, 0));
+      drawSurfaceLine(equator, scale, cx, cy);
+    }
+
     function drawEarth(scale, cx, cy) {
       const radius = EARTH_RADIUS_KM * scale;
-      const gradient = ctx.createRadialGradient(cx - radius * .28, cy - radius * .34, radius * .1, cx, cy, radius);
-      gradient.addColorStop(0, "#5bb8d4");
-      gradient.addColorStop(.48, "#245b7a");
-      gradient.addColorStop(.82, "#11364d");
-      gradient.addColorStop(1, "#071827");
+      const left = Math.floor(cx - radius);
+      const top = Math.floor(cy - radius);
+      const size = Math.max(1, Math.ceil(radius * 2));
+      const globeCanvas = document.createElement("canvas");
+      globeCanvas.width = size;
+      globeCanvas.height = size;
+      const globeCtx = globeCanvas.getContext("2d");
+      const globe = globeCtx.createImageData(size, size);
+      const sun = [-0.62, -0.18, 0.76];
+      const sunMag = norm(sun);
+      for (let py = 0; py < size; py += 1) {
+        const sy = (py - radius) / radius;
+        for (let px = 0; px < size; px += 1) {
+          const sx = (px - radius) / radius;
+          const r2 = sx * sx + sy * sy;
+          const idx = (py * size + px) * 4;
+          if (r2 > 1) continue;
+          const sz = Math.sqrt(1 - r2);
+          const [wx, wy, wz] = inverseRotate([sx, -sy, sz]);
+          const lon = Math.atan2(wy, wx);
+          const lat = Math.asin(clamp(wz, -1, 1));
+          const tex = sampleEarthTexture(lon, lat);
+          const sunCos = dot([wx, wy, wz], sun) / sunMag;
+          const day = clamp((sunCos + 0.10) / 0.38, 0, 1);
+          const terminator = Math.max(0, 1 - Math.abs(sunCos) / 0.075);
+          const light = 0.30 + day * 0.92;
+          const rim = clamp(0.92 + (1 - r2) * 0.14, 0.92, 1.06);
+          const duskR = terminator * 38;
+          const duskG = terminator * 20;
+          globe.data[idx] = Math.min(255, tex[0] * light * rim + 10 + duskR);
+          globe.data[idx + 1] = Math.min(255, tex[1] * light * rim + 10 + duskG);
+          globe.data[idx + 2] = Math.min(255, tex[2] * light * rim + 14);
+          globe.data[idx + 3] = 255;
+        }
+      }
+      globeCtx.putImageData(globe, 0, 0);
+      ctx.drawImage(globeCanvas, left, top, size, size);
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.fillStyle = gradient;
-      ctx.fill();
       ctx.strokeStyle = "rgba(92, 176, 214, .7)";
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.clip();
-      ctx.strokeStyle = "rgba(230,237,247,.16)";
-      ctx.lineWidth = 1;
-      for (let lat = -60; lat <= 60; lat += 30) {
-        ctx.beginPath();
-        const ry = Math.cos(lat * Math.PI / 180) * radius;
-        const y = cy + Math.sin(lat * Math.PI / 180) * radius;
-        ctx.ellipse(cx, y, ry, radius * .12, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      for (let lon = 0; lon < 180; lon += 30) {
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, radius * Math.abs(Math.cos(lon * Math.PI / 180)), radius, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      drawEarthGrid(scale, cx, cy);
       ctx.restore();
-      ctx.beginPath();
-      ctx.arc(cx + radius * .22, cy, radius * .96, -Math.PI / 2, Math.PI / 2);
-      ctx.fillStyle = "rgba(0,0,0,.22)";
-      ctx.fill();
     }
 
     function drawOrbit(node, samples, scale, cx, cy) {
@@ -854,21 +1604,83 @@
     }
 
     function render() {
+      if (cameraView === "status") {
+        canvas.style.display = "none";
+        statusBoard.style.display = "grid";
+        earthOnlyElements.forEach((element) => element.classList.add("hidden"));
+        renderStatusBoard();
+        return;
+      }
+      canvas.style.display = "block";
+      statusBoard.style.display = "none";
+      earthOnlyElements.forEach((element) => element.classList.remove("hidden"));
       resizeCanvas();
       const rect = canvas.getBoundingClientRect();
       const w = rect.width, h = rect.height;
-      const cx = w * .5, cy = h * .52;
+      const cx = w * .5 + viewPan.x, cy = h * .52 + viewPan.y;
       const maxRadiusKm = 7300;
-      const scale = Math.min(w, h) * .34 / maxRadiusKm;
+      const scale = Math.min(w, h) * .34 * viewZoom / maxRadiusKm;
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = "#060911";
       ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = "rgba(37,54,76,.48)";
-      ctx.lineWidth = 1;
-      for (let x = 0; x < w; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-      for (let y = 0; y < h; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+      if (gridEnabled) {
+        ctx.strokeStyle = "rgba(37,54,76,.48)";
+        ctx.lineWidth = 1;
+        for (let x = 0; x < w; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+        for (let y = 0; y < h; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+      }
       drawEarth(scale, cx, cy);
       nodes.forEach((node) => drawOrbit(node, byNode.get(node) || [], scale, cx, cy));
+    }
+
+    function beginDrag(event) {
+      if (cameraView === "status") return;
+      const mode = event.ctrlKey ? "pan" : pointerMode;
+      if (mode === "select") {
+        pickSatellite(event.clientX, event.clientY);
+        return;
+      }
+      dragState = {
+        mode,
+        x: event.clientX,
+        y: event.clientY,
+        panX: viewPan.x,
+        panY: viewPan.y,
+        yaw: viewAngles.yaw,
+        pitch: viewAngles.pitch
+      };
+      canvas.classList.add("dragging");
+      canvas.setPointerCapture(event.pointerId);
+    }
+
+    function dragOrbit(event) {
+      if (!dragState) return;
+      const dx = event.clientX - dragState.x;
+      const dy = event.clientY - dragState.y;
+      if (dragState.mode === "pan") {
+        viewPan = { x: dragState.panX + dx, y: dragState.panY + dy };
+      } else {
+        viewAngles = {
+          yaw: dragState.yaw + dx * 0.008,
+          pitch: clamp(dragState.pitch + dy * 0.006, -1.52, 1.52)
+        };
+      }
+      render();
+    }
+
+    function endDrag(event) {
+      if (!dragState) return;
+      dragState = null;
+      canvas.classList.remove("dragging");
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    }
+
+    function zoomOrbit(event) {
+      if (cameraView === "status") return;
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.08 : 0.92;
+      viewZoom = clamp(viewZoom * factor, 0.55, 2.8);
+      render();
     }
 
     async function loadEphemeris() {
@@ -885,12 +1697,24 @@
       setupControls();
       makeNodeCards();
       updateInspector();
-      demoSteps.slice(0, 3).forEach(applyStep);
+      setClock(0);
+      eventStore = [];
+      renderEvents();
       render();
     }
 
-    runButton.addEventListener("click", runDemo);
+    sendCommand.addEventListener("click", runCommandSimulation);
+    resetCommand.addEventListener("click", () => {
+      resetConsole();
+    });
+    canvas.addEventListener("pointerdown", beginDrag);
+    canvas.addEventListener("pointermove", dragOrbit);
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+    canvas.addEventListener("wheel", zoomOrbit, { passive: false });
     window.addEventListener("resize", render);
+    updatePointerHint();
+    loadEarthTexture();
     loadEphemeris();
   </script>
 </body>

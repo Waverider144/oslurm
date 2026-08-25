@@ -2,7 +2,7 @@
 
 The workload manager for computers that don't stay put.
 
-![O-SLURM mission control visualization](docs/assets/oslurm-console.png)
+![O-SLURM mission control visualization](docs/assets/oslurm_main.png)
 
 Topology changes.
 Sunlight disappears.
@@ -45,7 +45,7 @@ Slurm: queue / workload lifecycle / node execution.
 
 ## Modules
 
-This repository currently has two complementary tracks:
+This repository currently has three complementary tracks:
 
 ```text
 O-SLURM
@@ -56,6 +56,11 @@ GMAT-Compute
   Scheduler-neutral compute-payload digital twin layer for GMAT-based
   orbital simulation. It models compute hardware, power envelopes,
   thermal coupling, reliability, measured lab profiles, and task progress.
+
+Satellite-Aware Autonomy
+  A deterministic, explainable, partition-tolerant satellite-local scheduler
+  that uses mission intent, authority leases, local resource windows, compact
+  one-hop neighbor advertisements, reservations, and replayable journals.
 ```
 
 ### O-SLURM
@@ -76,7 +81,7 @@ O-SLURM resource windows
 Slurm REAL sat001..sat004
         |
         v
-checkpoint on sat002 eclipse risk
+checkpoint on sat001 eclipse risk
         |
         v
 restore on sat004
@@ -124,6 +129,32 @@ Task completed=YES
 GMAT ↔ COMPUTE CO-SIM: PASS
 ```
 
+### Satellite-Aware Autonomy
+
+[`docs/satellite-aware-scheduling.md`](docs/satellite-aware-scheduling.md) describes the autonomous scheduling interface.
+
+This module answers the disconnected constellation case: the ground segment sends a mission intent and authority lease, then each satellite can make bounded local decisions from its own state and direct-neighbor advertisements. The scheduler core does not import Slurm, GMAT, or consensus services.
+
+Implemented pieces:
+
+- `SchedulingIntent` and `AuthorityPolicy`
+- compact `SatelliteSchedulingAdvertisement`
+- direct-neighbor `NeighborSchedulingTable`
+- hard feasibility checks for compute, deadline, energy, thermal, connectivity, advertisement validity, and reservations
+- deterministic `MAXIMIZE_WORST_SAFETY_MARGIN` placement rule
+- `TaskOffer` / `TaskAcceptance` / `TaskReject` / `TaskCommit`
+- reservation lifecycle and idempotent commits
+- local execution backend, checkpoint/restore hooks, and replayable execution journal
+- `CentralizedBaseline` comparison metrics
+
+Run the satellite-local autonomy demo:
+
+```bash
+make satellite-demo
+```
+
+The demo uses real GMAT ECI JSON, disconnects ground authority, detects an eclipse-driven local-window risk on `SAT01`, rejects `SAT02` on energy margin, ignores non-direct `SAT04`, and hands the workload to `SAT03` with zero ground-dependent decisions while disconnected.
+
 ## Visualization
 
 ```bash
@@ -145,6 +176,7 @@ The console uses aerospace-style status colors:
 ```bash
 make test
 make demo
+make satellite-demo
 make visualize
 cd gmat-compute && make test && make demo
 python3 providers/gmat/adapter.py --scenario providers/gmat/scenarios/leo_demo.yaml --output /tmp/gmat-events.json

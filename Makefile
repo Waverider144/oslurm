@@ -1,4 +1,4 @@
-.PHONY: test demo gmat smoke visualize
+.PHONY: test demo gmat smoke visualize satellite-demo
 
 test:
 	python3 -m unittest discover -s tests -p 'test_*.py'
@@ -6,6 +6,9 @@ test:
 
 demo:
 	./scripts/demo.sh
+
+satellite-demo:
+	./scripts/satellite-demo.sh
 
 gmat:
 	./scripts/run-gmat.sh

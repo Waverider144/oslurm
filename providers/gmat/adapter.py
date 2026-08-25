@@ -35,7 +35,7 @@ def _circular_state(radius_km: float, phase_deg: float, inclination_deg: float =
 
 
 def write_gmat_script(report_path: Path) -> str:
-    phases = {"sat001": 100.0, "sat002": 100.0, "sat003": 10.0, "sat004": 280.0}
+    phases = {"sat001": 100.0, "sat002": 190.0, "sat003": 280.0, "sat004": 10.0}
     lines = []
     for node, phase in phases.items():
         x, y, z, vx, vy, vz = _circular_state(6921.0, phase)

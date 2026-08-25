@@ -41,7 +41,7 @@ def run_demo(root: Path) -> int:
     samples, events = parse_json(gmat_json)
     log_lines.append(f"[GMAT] propagated 4 spacecraft from T0 to T0+720s")
     for event in events:
-        if event.node_id == "sat002":
+        if event.node_id == "sat001":
             log_lines.append(f"[GMAT] {event.node_id} {event.type} at +{(event.timestamp_ms - samples[0].timestamp_ms)/1000:.2f}s")
 
     power = PowerConfig(initial_soc=0.42, reserve_soc=0.35, solar_generation_w=280, baseline_load_w=120, comm_load_w=20, compute_load_w=460)
@@ -67,7 +67,7 @@ def run_demo(root: Path) -> int:
     candidates = generate_candidates(job, initial_windows)
     for c in candidates:
         log_lines.append(f"[SCHED] job=42 candidate={c.nodes[0]} score={c.score:.3f}")
-    selected = select_candidate(job, [w for w in initial_windows if w.node_id == "sat002"]) or (candidates[0] if candidates else None)
+    selected = select_candidate(job, [w for w in initial_windows if w.node_id == "sat001"]) or (candidates[0] if candidates else None)
     if not selected:
         log_lines.append("[SCHED] no feasible initial placement")
         return finish(root, gmat, SlurmBridge(tmp), log_lines, False)
