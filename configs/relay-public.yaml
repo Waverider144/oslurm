@@ -1,0 +1,8 @@
+constellation_id: relay-public
+domain: comm
+nodes:
+  - comm:RELAY-A
+  - comm:RELAY-B
+buffer_capacity_bytes: 512000000
+operator_validated: false
+notes: Public approximate relay constellation profile for architecture tests.

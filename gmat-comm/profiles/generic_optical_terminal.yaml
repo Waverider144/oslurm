@@ -1,0 +1,32 @@
+profile_id: generic_optical_terminal
+snapshot_date: 2026-08
+operator_validated: false
+terminals:
+  - terminal_id: optical-0
+    kind: optical
+    max_power_w: 80
+buffer:
+  capacity_bytes: 64000000
+envelope:
+  provider: measured
+  manifest: ../measured/example_terminal/manifest.yaml
+visibility:
+  require_los: true
+  occulting_bodies:
+    - Earth
+  fov_policy: unconstrained
+  compatibility_mode: legacy-unconstrained
+geometry:
+  reference_frame: spacecraft_body
+  boresight:
+    x: 1.0
+    y: 0.0
+    z: 0.0
+  field_of_regard:
+    type: cone
+    half_angle_deg: 60
+  earth_clearance_km: 10
+exclusion:
+  sun_deg: null
+  earth_limb_deg: null
+  moon_deg: null

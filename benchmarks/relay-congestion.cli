@@ -1,0 +1,6 @@
+load constellation compute configs/compute-ai.yaml
+load constellation comm configs/relay-public.yaml
+connect constellations compute-ai relay-public
+transfer submit ground:MISSION-CONTROL compute:SAT003 24000000
+transfer submit compute:SAT003 ground:MISSION-CONTROL 8000000
+show reservations

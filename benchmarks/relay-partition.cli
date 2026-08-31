@@ -1,0 +1,5 @@
+load constellation compute configs/compute-ai.yaml
+load constellation comm configs/relay-public.yaml
+connect constellations compute-ai relay-public
+show network comm
+show contacts comm:RELAY-A

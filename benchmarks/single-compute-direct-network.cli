@@ -1,0 +1,10 @@
+load constellation compute configs/compute-ai.yaml
+load constellation comm configs/relay-public.yaml
+connect constellations compute-ai relay-public
+profile on --mode full --run-id bench-direct
+submit job workloads/inference.yaml
+run 2h
+show transfers
+profile network
+profile timeline JOB001
+profile off

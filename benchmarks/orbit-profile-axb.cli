@@ -1,0 +1,11 @@
+load constellation compute configs/compute-ai.yaml
+load constellation comm configs/relay-public.yaml
+connect constellations compute-ai relay-public
+profile on --mode full --trace --run-id orbit-profile-axb
+submit job workloads/inference.yaml
+run 2h
+profile status
+profile network
+profile timeline JOB001
+profile export profiles/orbit-profile-axb/perfetto.json --time-axis simulation
+profile off

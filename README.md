@@ -45,7 +45,7 @@ Slurm: queue / workload lifecycle / node execution.
 
 ## Modules
 
-This repository currently has three complementary tracks:
+This repository currently has five complementary tracks:
 
 ```text
 O-SLURM
@@ -57,10 +57,19 @@ GMAT-Compute
   orbital simulation. It models compute hardware, power envelopes,
   thermal coupling, reliability, measured lab profiles, and task progress.
 
+GMAT-Comm
+  Scheduler-neutral communication-payload layer that turns GMAT-derived
+  ECI geometry and terminal envelope profiles into contact windows, transfer
+  plans, reservations, and route explanations.
+
 Satellite-Aware Autonomy
   A deterministic, explainable, partition-tolerant satellite-local scheduler
   that uses mission intent, authority leases, local resource windows, compact
   one-hop neighbor advertisements, reservations, and replayable journals.
+
+Multi-Constellation Co-Scheduling
+  O-SLURM-side network model for compute, relay, access, and ground domains.
+  It jointly ranks compute placement and input/result transfer feasibility.
 ```
 
 ### O-SLURM
@@ -129,6 +138,49 @@ Task completed=YES
 GMAT ↔ COMPUTE CO-SIM: PASS
 ```
 
+### GMAT-Comm
+
+[`gmat-comm/`](gmat-comm/) is the companion communication-payload module:
+
+> A scheduler-neutral communication-payload and contact-planning layer for GMAT-based mission simulation.
+
+It is not tied to Slurm. Its C++ core has no GMAT headers and can be used by GMAT, O-SLURM, Python studies, or a future service boundary.
+
+It provides:
+
+- communication terminals and payload state
+- analytic and measured communication envelope providers
+- bandwidth / latency / packet-loss / acquisition / power curves
+- contact windows and conservative transfer capacity
+- buffer and reservation lifecycle
+- direct and temporal store-carry-forward route planning
+- Python provider ABI
+- GMAT ECI JSON geometry adapter
+- protobuf interface draft
+- deterministic C++ and Python tests
+
+Run it independently:
+
+```bash
+make -C gmat-comm test
+make -C gmat-comm demo
+```
+
+The current GMAT integration path is intentionally adapter-based:
+
+```text
+GMAT/O-SLURM ECI JSON
+        |
+        v
+GMAT-Comm geometry adapter
+        |
+        v
+contact windows + communication envelopes
+        |
+        v
+O-SLURM network and joint planner
+```
+
 ### Satellite-Aware Autonomy
 
 [`docs/satellite-aware-scheduling.md`](docs/satellite-aware-scheduling.md) describes the autonomous scheduling interface.
@@ -171,6 +223,75 @@ The console uses aerospace-style status colors:
 - Amber: degraded operating condition before failure
 - Red: failure event
 
+## Flight Recorder & Profiling
+
+O-SLURM includes a structured simulation flight recorder for profiling runs. It separates wall-clock time, simulation time, and deterministic event sequence, then streams JSONL traces under `profiles/<run-id>/`.
+
+Run a real GMAT-backed satellite-autonomy profiling session through the CLI handlers:
+
+```bash
+printf 'profile on --mode full --run-id profile001\nrun satellite-demo\nprofile summary\nprofile topology\nprofile scheduler\nprofile bottleneck constellation\nprofile failures\nprofile off\n' | python3 -m oslurm.cli
+```
+
+Generated files:
+
+```text
+profiles/<run-id>/
+  manifest.json
+  events.jsonl
+  snapshots.jsonl
+  metrics.json
+  bottlenecks.json
+  failures.jsonl
+  trace.json
+  topology_epochs.json
+```
+
+Useful commands:
+
+```bash
+python3 -m oslurm.cli profile status
+python3 -m oslurm.cli profile summary
+python3 -m oslurm.cli profile topology
+python3 -m oslurm.cli profile scheduler
+python3 -m oslurm.cli profile network
+python3 -m oslurm.cli profile bottleneck joint
+python3 -m oslurm.cli profile job 381
+python3 -m oslurm.cli profile timeline 381
+python3 -m oslurm.cli profile cause 381
+python3 -m oslurm.cli profile export trace.json --time-axis simulation
+python3 -m oslurm.cli profile replay profiles/profile001
+python3 -m oslurm.cli montecarlo run satellite-autonomy --runs 10 --seed 42
+python3 -m oslurm.cli montecarlo worst
+```
+
+The first implementation records orbital, topology, node-state, power, thermal, prediction, job, scheduler, protocol, failure, recovery, performance, ground, simulation, communication-link, transfer, reservation, and joint-planner events. It also records scheduler candidate rejection causes, operation-regime intervals, stranded compute, topology churn, network transfer plans, buffered bytes, profile overhead, replay digests, Perfetto/Chrome trace JSON export, node/job CSV exports, and reproducible Monte Carlo campaign summaries.
+
+## Multi-Constellation Networking
+
+O-SLURM now includes a network model under [`oslurm/network/`](oslurm/network/) that co-schedules compute and communication resources across compute spacecraft, communication relays, access links, and ground mission-control endpoints.
+
+The CLI can load compute and relay constellations, connect them, submit a mission job, reserve input/result transfer paths, and profile network bottlenecks.
+
+Run the joint compute/network scenario:
+
+```bash
+printf 'load constellation compute configs/compute-ai.yaml
+load constellation comm configs/relay-public.yaml
+connect constellations compute-ai relay-public
+profile on --mode full --run-id joint-dev
+submit job workloads/inference.yaml
+run 2h
+show transfers
+profile network
+profile bottleneck joint
+profile timeline JOB001
+profile off
+' | python3 -m oslurm.cli
+```
+
+The default scenario selects `compute:SAT003` even though it is slower than `compute:SAT001`, because the relay-assisted input/result route gives the earliest end-to-end mission completion.
+
 ## Commands
 
 ```bash
@@ -178,6 +299,8 @@ make test
 make demo
 make satellite-demo
 make visualize
+make profile-smoke
+make -C gmat-comm test
 cd gmat-compute && make test && make demo
 python3 providers/gmat/adapter.py --scenario providers/gmat/scenarios/leo_demo.yaml --output /tmp/gmat-events.json
 ```

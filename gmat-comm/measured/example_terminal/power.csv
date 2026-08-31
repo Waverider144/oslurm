@@ -1,0 +1,4 @@
+range_km,nominal,lower,upper,confidence
+500,32,28,36,0.90
+1500,44,38,50,0.88
+3000,61,52,70,0.84

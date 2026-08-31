@@ -1,0 +1,31 @@
+profile_id: generic_rf_terminal
+snapshot_date: 2026-08
+operator_validated: false
+terminals:
+  - terminal_id: rf-0
+    kind: rf
+    max_power_w: 45
+buffer:
+  capacity_bytes: 32000000
+envelope:
+  provider: analytic
+visibility:
+  require_los: true
+  occulting_bodies:
+    - Earth
+  fov_policy: unconstrained
+  compatibility_mode: legacy-unconstrained
+geometry:
+  reference_frame: spacecraft_body
+  boresight:
+    x: 1.0
+    y: 0.0
+    z: 0.0
+  field_of_regard:
+    type: cone
+    half_angle_deg: 120
+  earth_clearance_km: 10
+exclusion:
+  sun_deg: null
+  earth_limb_deg: null
+  moon_deg: null

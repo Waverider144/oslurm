@@ -1,0 +1,8 @@
+load constellation compute configs/compute-ai.yaml
+load constellation comm configs/relay-public.yaml
+connect constellations compute-ai relay-public
+profile on --mode full --run-id bench-relay
+submit job workloads/inference.yaml
+scheduler routes JOB001-RESULT-compute:SAT003
+profile bottleneck joint
+profile off

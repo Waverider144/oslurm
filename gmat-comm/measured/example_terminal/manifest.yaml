@@ -1,0 +1,31 @@
+schema_version: 1
+
+terminal:
+  vendor: example
+  model: optical_terminal_x
+  revision: revA
+
+provenance:
+  source: laboratory_measurement
+  campaign: TVAC_OPTICAL_2027
+  measured_at: 2027-01-01
+  notes: deterministic example envelope for GMAT-Comm tests
+
+axes:
+  range:
+    unit: km
+
+datasets:
+  bandwidth:
+    file: bandwidth.csv
+  latency:
+    file: latency.csv
+  packet_loss:
+    file: packet_loss.csv
+  acquisition:
+    file: acquisition.csv
+  power:
+    file: power.csv
+
+extrapolation:
+  policy: reject

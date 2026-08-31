@@ -1,0 +1,35 @@
+profile_id: starlink_like_public_example
+snapshot_date: 2026-08
+operator_validated: false
+public_information_approximation: true
+terminals:
+  - terminal_id: optical-isl-a
+    kind: optical
+    max_power_w: 100
+  - terminal_id: optical-isl-b
+    kind: optical
+    max_power_w: 100
+buffer:
+  capacity_bytes: 512000000
+envelope:
+  provider: analytic
+notes: Public-information approximation for architecture experiments only.
+visibility:
+  require_los: true
+  occulting_bodies:
+    - Earth
+  fov_policy: constrained
+geometry:
+  reference_frame: spacecraft_body
+  boresight:
+    x: 1.0
+    y: 0.0
+    z: 0.0
+  field_of_regard:
+    type: cone
+    half_angle_deg: 70
+  earth_clearance_km: 10
+exclusion:
+  sun_deg: null
+  earth_limb_deg: null
+  moon_deg: null

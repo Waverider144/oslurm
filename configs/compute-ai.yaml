@@ -1,0 +1,9 @@
+constellation_id: compute-ai
+domain: compute
+nodes:
+  - compute:SAT001
+  - compute:SAT002
+  - compute:SAT003
+  - compute:SAT004
+buffer_capacity_bytes: 128000000
+notes: Four-node compute constellation for GMAT-Comm/O-SLURM co-scheduling tests.

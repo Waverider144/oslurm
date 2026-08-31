@@ -1,5 +1,8 @@
 # Local runtime state
 .oslurm-state/
+/profiles/
+/mc/
+/trace.json
 *.log
 *.out
 *.pid

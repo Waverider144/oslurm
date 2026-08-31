@@ -1,0 +1,69 @@
+{
+  "job_id": "JOB001",
+  "selected_compute": "compute:SAT003",
+  "planner": "joint compute/network",
+  "visibility_fidelity": "ellipsoid:wgs84",
+  "decision": {
+    "rationale": "SAT003 wins on end-to-end finish time because relay throughput dominates local compute speed.",
+    "candidates": [
+      {
+        "node_id": "compute:SAT001",
+        "compute_time_s": 120,
+        "network": "direct slow access",
+        "feasible": true
+      },
+      {
+        "node_id": "compute:SAT003",
+        "compute_time_s": 220,
+        "network": "relay assisted",
+        "feasible": true
+      }
+    ]
+  },
+  "transfers": [
+    {
+      "transfer_id": "JOB001-INPUT-compute:SAT003",
+      "path_kind": "temporal-store-carry-forward",
+      "finish_s": 47.68,
+      "bytes": 24000000,
+      "hops": [
+        {
+          "source": "ground:MISSION-CONTROL",
+          "destination": "comm:RELAY-A",
+          "contact_id": "GROUND-RELAY-A",
+          "start_s": 0.0,
+          "end_s": 6.4
+        },
+        {
+          "source": "comm:RELAY-A",
+          "destination": "compute:SAT003",
+          "contact_id": "RELAY-A-SAT003",
+          "start_s": 40.0,
+          "end_s": 47.68
+        }
+      ]
+    },
+    {
+      "transfer_id": "JOB001-RESULT-compute:SAT003",
+      "path_kind": "temporal-store-carry-forward",
+      "finish_s": 277.133,
+      "bytes": 8000000,
+      "hops": [
+        {
+          "source": "compute:SAT003",
+          "destination": "comm:RELAY-A",
+          "contact_id": "SAT003-RELAY-A",
+          "start_s": 270.0,
+          "end_s": 272.56
+        },
+        {
+          "source": "comm:RELAY-A",
+          "destination": "ground:MISSION-CONTROL",
+          "contact_id": "RELAY-A-GROUND",
+          "start_s": 275.0,
+          "end_s": 277.133
+        }
+      ]
+    }
+  ]
+}

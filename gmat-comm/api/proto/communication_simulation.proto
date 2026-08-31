@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package gmat_comm.v1;
+
+message ContactWindow {
+  string contact_id = 1;
+  string source = 2;
+  string destination = 3;
+  double start_s = 4;
+  double end_s = 5;
+  uint64 minimum_bandwidth_bps = 6;
+  uint64 conservative_transfer_bytes = 7;
+  double latency_upper_bound_ms = 8;
+  double survival_probability = 9;
+  double confidence = 10;
+}
+
+message TransferIntent {
+  string transfer_id = 1;
+  string source = 2;
+  string destination = 3;
+  uint64 bytes = 4;
+  double earliest_start_s = 5;
+  double deadline_s = 6;
+  string priority = 7;
+  string delivery = 8;
+}
+
+message TransferHop {
+  string source = 1;
+  string destination = 2;
+  string contact_id = 3;
+  double start_s = 4;
+  double end_s = 5;
+  uint64 reserved_bytes = 6;
+}
+
+message TransferPlan {
+  string transfer_id = 1;
+  string path_kind = 2;
+  repeated TransferHop hops = 3;
+  double predicted_finish_s = 4;
+  uint64 bottleneck_bandwidth_bps = 5;
+  double survival_probability = 6;
+  double confidence = 7;
+}
+
+service CommunicationSimulation {
+  rpc PlanTransfer(TransferIntent) returns (TransferPlan);
+}
