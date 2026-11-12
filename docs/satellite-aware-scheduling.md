@@ -55,6 +55,13 @@ Satellites exchange compact one-hop advertisements:
 
 Advertisements are direct-neighbor only. Expired advertisements are ignored. Stale sequence numbers are rejected.
 
+The full-orbit Ax=b integration additionally supports explicit
+`LocalSchedulingContext.peer_delivery_s` entries supplied by a validated contact
+planner. These authorize routed peer reachability without adding fake direct
+`LinkState` edges. Routed migration durations replace the legacy fixed estimate
+in feasibility and safety-margin calculations. Contexts without this mapping
+retain the direct-neighbor-only behavior.
+
 ## Decision Rule
 
 The default deterministic policy is `MAXIMIZE_WORST_SAFETY_MARGIN`.
@@ -133,6 +140,18 @@ Expected terminal markers:
 - `SATELLITE AUTONOMY: PASS`
 
 ## Tests
+
+The real workload integration can be run with:
+
+```sh
+python3 -m oslurm.orbit_benchmark --policy autonomous --backend slurm --publish
+```
+
+It combines modeled SoC/temperature forecasts, ground-disconnect authority,
+peer offers and commitments, real checkpointable CG execution, and GMAT-Comm
+data-transfer reservations. Controllers and protocol messages remain simulated
+in-process; Slurm performs the numerical execution. See
+[full-orbit experiment](orbit-axb.md) for model assumptions and replay details.
 
 Run:
 

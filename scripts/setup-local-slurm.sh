@@ -8,6 +8,13 @@ SLURM_ROOT="$ROOT/third_party/slurm-26.05.3"
 STATE="$ROOT/.oslurm-state/slurm"
 PLUG="$STATE/plugins"
 HOSTNAME_SHORT="$(hostname -s)"
+HARDWARE="$("$SLURM_ROOT/src/slurmd/slurmd/slurmd" -C)"
+if [[ "$HARDWARE" =~ RealMemory=([0-9]+) ]]; then
+  REAL_MEMORY=$((BASH_REMATCH[1] - 256))
+else
+  echo "Cannot detect local Slurm memory" >&2
+  exit 1
+fi
 
 mkdir -p "$STATE"/{etc,state,logs,run,tmp} "$STATE/spool/sat001" "$STATE/spool/sat002" "$STATE/spool/sat003" "$STATE/spool/sat004" "$PLUG"
 
@@ -45,10 +52,10 @@ MinJobAge=60
 SlurmctldTimeout=120
 SlurmdTimeout=120
 Waittime=0
-NodeName=sat001 NodeHostName=sat001 NodeAddr=127.0.0.1 Port=6818 CPUs=12 Boards=1 SocketsPerBoard=1 CoresPerSocket=6 ThreadsPerCore=2 RealMemory=96049 State=UNKNOWN
-NodeName=sat002 NodeHostName=sat002 NodeAddr=127.0.0.1 Port=6819 CPUs=12 Boards=1 SocketsPerBoard=1 CoresPerSocket=6 ThreadsPerCore=2 RealMemory=96049 State=UNKNOWN
-NodeName=sat003 NodeHostName=sat003 NodeAddr=127.0.0.1 Port=6820 CPUs=12 Boards=1 SocketsPerBoard=1 CoresPerSocket=6 ThreadsPerCore=2 RealMemory=96049 State=UNKNOWN
-NodeName=sat004 NodeHostName=sat004 NodeAddr=127.0.0.1 Port=6821 CPUs=12 Boards=1 SocketsPerBoard=1 CoresPerSocket=6 ThreadsPerCore=2 RealMemory=96049 State=UNKNOWN
+NodeName=sat001 NodeHostName=sat001 NodeAddr=127.0.0.1 Port=6818 CPUs=12 Boards=1 SocketsPerBoard=1 CoresPerSocket=6 ThreadsPerCore=2 RealMemory=$REAL_MEMORY State=UNKNOWN
+NodeName=sat002 NodeHostName=sat002 NodeAddr=127.0.0.1 Port=6819 CPUs=12 Boards=1 SocketsPerBoard=1 CoresPerSocket=6 ThreadsPerCore=2 RealMemory=$REAL_MEMORY State=UNKNOWN
+NodeName=sat003 NodeHostName=sat003 NodeAddr=127.0.0.1 Port=6820 CPUs=12 Boards=1 SocketsPerBoard=1 CoresPerSocket=6 ThreadsPerCore=2 RealMemory=$REAL_MEMORY State=UNKNOWN
+NodeName=sat004 NodeHostName=sat004 NodeAddr=127.0.0.1 Port=6821 CPUs=12 Boards=1 SocketsPerBoard=1 CoresPerSocket=6 ThreadsPerCore=2 RealMemory=$REAL_MEMORY State=UNKNOWN
 PartitionName=debug Nodes=sat[001-004] Default=YES MaxTime=INFINITE State=UP
 EOF
 

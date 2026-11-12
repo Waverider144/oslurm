@@ -195,6 +195,7 @@ class DeterministicSatelliteScheduler:
         candidates = [Candidate(ctx.self_state.node_id, ctx.own_windows[0] if ctx.own_windows else None, None, True)]
         if ctx.connectivity != ConnectivityMode.ISOLATED:
             reachable_nodes = {link.target for link in ctx.self_state.links}
+            reachable_nodes.update(ctx.peer_delivery_s)
             for ad in ctx.neighbors.reachable(ctx.now, reachable_nodes):
-                candidates.append(Candidate(ad.node_id, None, ad, False))
+                candidates.append(Candidate(ad.node_id, None, ad, False, ctx.peer_delivery_s.get(ad.node_id)))
         return candidates

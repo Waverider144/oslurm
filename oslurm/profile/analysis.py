@@ -193,6 +193,43 @@ class ProfileAnalyzer:
             "deadline_misses": sum(1 for e in self.events if e.header.event_type == TraceEventType.TRANSFER_FAILED.value and e.payload.get("reason") == "DEADLINE"),
         }
 
+    def mission_metrics(self, job_id: str | None = None) -> dict[str, Any]:
+        """Non-overlapping mission latency attribution; wall costs stay separate."""
+        jobs = sorted({e.header.job_id for e in self.events if e.header.job_id and
+                       e.header.event_type == "JOB_SUBMITTED" and (job_id is None or e.header.job_id == job_id)})
+        reports = []
+        for job in jobs:
+            events = [e for e in self.events if e.header.job_id == job]
+            def first(kind):
+                return next((e for e in events if e.header.event_type == kind), None)
+            def seconds(event):
+                return event.header.simulation_time_ns / 1e9
+            submitted, start, compute, finish = map(first, ("JOB_SUBMITTED", "JOB_STARTED", "COMPUTE_COMPLETED", "MISSION_JOB_COMPLETED"))
+            transfers = {e.payload["stage"]: e.payload for e in events
+                         if e.header.event_type == "TRANSFER_COMPLETED" and "stage" in e.payload}
+            upload, downlink = transfers.get("input"), transfers.get("result")
+            execution = compute.payload.get("execution_elapsed_s") if compute else None
+            kernel = compute.payload.get("compute_wall_s") if compute else None
+            queue = max(0, seconds(start) - upload["delivery_s"]) if start and upload else None
+            latency = seconds(finish) - seconds(submitted) if finish and submitted else None
+            accounted = (upload["elapsed_s"] + queue + execution + downlink["elapsed_s"]
+                         if upload and downlink and queue is not None and execution is not None else None)
+            reports.append({"job_id": job, "completed": finish is not None,
+                "mission_latency_s": latency, "input": upload, "compute_queue_s": queue,
+                "execution_elapsed_s": execution, "kernel_wall_s": kernel,
+                "worker_overhead_wall_s": max(0, execution - kernel) if execution is not None and kernel is not None else None,
+                "result": downlink, "accounted_latency_s": accounted,
+                "unattributed_s": latency - accounted if latency is not None and accounted is not None else None,
+                "replans": sum(e.header.event_type == "NETWORK_REPLAN" for e in events),
+                "failed_replans": sum(e.header.event_type == "NETWORK_REPLAN" and not e.payload.get("feasible", True) for e in events),
+                "replan_wall_s": sum(e.payload.get("replan_wall_s", 0) for e in events if e.header.event_type == "NETWORK_REPLAN"),
+                "planner_wall_s": sum(e.payload.get("cost", {}).get("wall_time_ns", 0) / 1e9
+                                      for e in events if e.header.event_type == "JOINT_PLANNER_DECISION")})
+        preparation = [e.payload for e in self.events if e.header.event_type == "COMM_TOPOLOGY_UPDATED"
+                       and "window_build_wall_s" in e.payload]
+        return {"jobs": reports, "contact_generation": preparation,
+                "attribution": "input + compute queue + measured worker + result; wall-only preparation/planning not added"}
+
     def scheduler_metrics(self) -> dict[str, Any]:
         decisions = [e for e in self.events if e.header.event_type in {TraceEventType.SCHEDULER_DECISION.value, TraceEventType.SCHEDULER_REEVALUATION.value}]
         costs = [int(e.payload.get("cost", {}).get("wall_time_ns", 0)) for e in decisions]
@@ -227,14 +264,16 @@ class ProfileAnalyzer:
                 category = BOTTLENECK_LABELS.get(str(event.payload.get("regime")), "UNKNOWN")
                 breakdown[category] += int(event.payload.get("duration_ns", 0))
             if event.header.event_type == TraceEventType.JOB_MIGRATION_END.value:
-                breakdown["MIGRATION"] += int(event.payload.get("duration_ns", 0))
+                breakdown["MIGRATION"] += max(0, int(event.payload.get("duration_ns", 0)) - int(event.payload.get("checkpoint_transfer_ns", 0)))
+            if event.header.event_type == TraceEventType.TRANSFER_COMPLETED.value:
+                breakdown["NETWORK"] += int(event.payload.get("duration_ns", 0))
             if event.header.event_type == TraceEventType.JOB_CHECKPOINT_END.value:
                 breakdown["CHECKPOINT_TRANSFER"] += int(event.payload.get("duration_ns", 0))
         scheduler_delay = sum(int(e.payload.get("cost", {}).get("wall_time_ns", 0)) for e in events if e.category == "SCHEDULER")
         if scheduler_delay:
             breakdown["SCHEDULER_DECISION"] += scheduler_delay
         total = (completed - submitted) if submitted is not None and completed is not None else sum(breakdown.values())
-        ordered = breakdown.most_common()
+        ordered = (+breakdown).most_common()
         return {
             "job_id": job_id,
             "found": True,
@@ -253,17 +292,21 @@ class ProfileAnalyzer:
 
     def bottleneck_summary(self) -> dict[str, Any]:
         delays = Counter()
+        transfer_starts = {event.payload.get("transfer_id"): event.header.simulation_time_ns
+                           for event in self.events if event.header.event_type == TraceEventType.TRANSFER_STARTED.value}
         for event in self.events:
             if event.header.event_type == TraceEventType.OPERATING_REGIME_EXIT.value:
                 delays[BOTTLENECK_LABELS.get(str(event.payload.get("regime")), "UNKNOWN")] += int(event.payload.get("duration_ns", 0))
             if event.header.event_type == TraceEventType.JOB_MIGRATION_END.value:
-                delays["MIGRATION"] += int(event.payload.get("duration_ns", 0))
+                delays["MIGRATION"] += max(0, int(event.payload.get("duration_ns", 0)) - int(event.payload.get("checkpoint_transfer_ns", 0)))
             if event.header.event_type == TraceEventType.JOB_CHECKPOINT_END.value:
                 delays["CHECKPOINT_TRANSFER"] += int(event.payload.get("duration_ns", 0))
             if event.header.event_type == TraceEventType.TRANSFER_COMPLETED.value:
-                delays["NETWORK"] += int(event.header.simulation_time_ns)
+                start = transfer_starts.get(event.payload.get("transfer_id"), event.header.simulation_time_ns)
+                delays["NETWORK"] += int(event.payload.get("duration_ns", event.header.simulation_time_ns - start))
             if event.header.event_type == TraceEventType.JOINT_PLANNER_DECISION.value:
                 delays["JOINT_PLANNER"] += int(event.payload.get("cost", {}).get("wall_time_ns", 0))
+        delays = +delays
         if not delays:
             return {"dominant": "UNKNOWN", "percentages": {}}
         return {"dominant": delays.most_common(1)[0][0], "percentages": percent_counter(delays)}
@@ -344,6 +387,12 @@ class ProfileAnalyzer:
         for event in self.events:
             ts = event.header.simulation_time_ns / 1000 if time_axis == "simulation" else event.header.wall_time_ns / 1000
             dur = event.payload.get("duration_ns")
+            if time_axis == "simulation" and "span_start_sim_s" in event.payload:
+                ts = event.payload["span_start_sim_s"] * 1e6
+            if time_axis == "wall" and event.payload.get("duration_time_axis") == "simulation":
+                dur = event.payload.get("wall_duration_ns")
+                if dur is not None:
+                    ts = event.payload["span_start_wall_ns"] / 1000
             trace_events.append({
                 "name": event.header.event_type,
                 "cat": event.category,

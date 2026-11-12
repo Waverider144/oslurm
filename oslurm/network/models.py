@@ -99,6 +99,7 @@ class ContactWindow:
     source_terminal: str = "tx0"
     destination_terminal: str = "rx0"
     visibility: VisibilityResult | None = None
+    acquisition_s: float = 0.0
 
     def capacity_for(self, start_s: float) -> int:
         usable_s = max(0.0, self.end_s - max(self.start_s, start_s))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from oslurm.models import NodeId, OrbitalJobSpec, PredictedResourceWindow, TimestampMs
 
@@ -15,6 +16,7 @@ class Candidate:
     window: PredictedResourceWindow | None
     advertisement: object | None
     is_local: bool
+    migration_cost_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -67,8 +69,8 @@ def hard_feasibility(
 ) -> FeasibilityResult:
     cpus, ram_mb, min_soc, peak_temp_c, _survival = candidate_capacity(candidate)
     required_ms = int(job.runtime_s * 1000)
-    if not candidate.is_local:
-        required_ms += int((job.checkpoint_supported and 27.0 or 60.0) * 1000)
+    migration_s = 0.0 if candidate.is_local else candidate.migration_cost_s if candidate.migration_cost_s is not None else (27.0 if job.checkpoint_supported else 60.0)
+    required_ms += math.ceil(migration_s * 1000)
     predicted_completion = now + required_ms
     deadline = intent.deadline if intent.deadline is not None else job.submitted_at_ms + int(job.deadline_s * 1000)
     rejected: list[CandidateRejection] = []
@@ -100,6 +102,6 @@ def hard_feasibility(
         feasible=not rejected,
         rejections=rejected,
         predicted_completion_ms=predicted_completion,
-        migration_cost_s=0.0 if candidate.is_local else 27.0,
+        migration_cost_s=migration_s,
         energy_cost=job.runtime_s * max(0.0, 1.0 - min_soc),
     )

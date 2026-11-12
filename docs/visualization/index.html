@@ -342,6 +342,7 @@
     }
 
     .tool-label {
+      display: none;
       color: var(--muted);
       font: 800 .66rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       text-transform: uppercase;
@@ -448,8 +449,8 @@
 
     .hud {
       position: absolute;
-      left: 376px;
-      top: 76px;
+      left: 14px;
+      top: 14px;
       display: grid;
       gap: 8px;
       pointer-events: none;
@@ -525,7 +526,7 @@
 
     .progress span {
       display: block;
-      width: 61%;
+      width: 0%;
       height: 100%;
       background: linear-gradient(90deg, var(--blue), var(--green));
       transition: width .4s ease;
@@ -873,19 +874,23 @@
       .topbar, .bottom { grid-template-columns: 1fr; }
       .main { grid-template-columns: 1fr; height: auto; }
       .topbar { align-items: stretch; }
-      .orbit-panel, .side, .ops-side { height: 620px; }
-      .orbit-body { grid-template-columns: 1fr; }
-      .hud { left: 26px; top: 318px; }
+      .orbit-panel { height: 960px; }
+      .side { height: 800px; }
+      .ops-side { height: 620px; }
+      .orbit-body { grid-template-columns: 1fr; grid-template-rows: 360px minmax(0, 1fr); }
       .progress { width: 190px; }
     }
 
     @media (max-width: 620px) {
       .shell { padding: 10px; }
       .job-strip { grid-template-columns: 1fr; }
-      .legend, .orbital-grid, .event-filters { grid-template-columns: 1fr; }
-      .orbit-panel, .side, .ops-side { height: 760px; }
-      .orbit-body { inset-bottom: 148px; padding: 0 10px; }
+      .orbital-grid { grid-template-columns: 1fr; }
+      .legend, .event-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .orbit-panel, .side { height: 980px; }
+      .orbit-panel > .panel-title { min-height: 90px; flex-wrap: wrap; gap: 8px; padding: 14px 12px 0; }
+      .orbit-body { top: 90px; bottom: 148px; padding: 0 10px; }
       .command-rail { grid-template-rows: minmax(170px, .9fr) minmax(135px, .65fr); }
+      #pointerHint { display: none; }
     }
   </style>
 </head>
@@ -906,6 +911,7 @@
           <div class="view-toggle" aria-label="Camera view controls">
             <button type="button" data-view="iso" class="active">ISO</button>
             <button type="button" data-view="eci">ECI</button>
+            <button type="button" data-view="map" title="Ground track map">MAP</button>
             <button type="button" data-view="status">LIST</button>
           </div>
           <span id="clock">T+000s</span>
@@ -914,7 +920,7 @@
           <div class="command-rail" aria-label="Interactive satellite command line">
             <section class="console-pane">
               <div class="console-head">
-                <span>Command Uplink</span>
+                <span>Execution Record</span>
                 <div class="console-actions">
                   <button id="sendCommand" type="button" title="Send command">▶</button>
                   <button id="resetCommand" type="button" title="Reset command">↺</button>
@@ -933,6 +939,15 @@
           <div class="orbit-stage">
             <canvas id="orbitCanvas" aria-label="3D Earth and GMAT orbit visualization"></canvas>
             <div class="status-board" id="statusBoard" aria-label="Satellite status list"></div>
+            <div class="hud earth-only" id="orbitHud">
+              <div class="hud-line" id="dataSource">loading GMAT ephemeris</div>
+              <div class="hud-line hud-legend">
+                <span class="mini-legend"><span class="mini-swatch"></span>Change</span>
+                <span class="mini-legend"><span class="mini-swatch amber"></span>Degraded</span>
+                <span class="mini-legend"><span class="mini-swatch red"></span>Failed</span>
+                <span class="mini-legend"><span class="mini-swatch green"></span>Compute</span>
+              </div>
+            </div>
             <div class="view-controls earth-only" id="viewControls" aria-label="Earth view controls">
               <div class="tool-group">
                 <button class="tool-button active" id="gridToggle" type="button" title="Toggle grid" aria-label="Toggle grid">
@@ -952,15 +967,6 @@
             </div>
           </div>
         </div>
-        <div class="hud earth-only" id="orbitHud">
-          <div class="hud-line" id="dataSource">loading GMAT ephemeris</div>
-          <div class="hud-line hud-legend">
-            <span class="mini-legend"><span class="mini-swatch"></span>Change</span>
-            <span class="mini-legend"><span class="mini-swatch amber"></span>Degraded</span>
-            <span class="mini-legend"><span class="mini-swatch red"></span>Failed</span>
-            <span class="mini-legend"><span class="mini-swatch green"></span>Compute</span>
-          </div>
-        </div>
         <div class="job-strip">
           <div>
             <p class="job-title" id="jobTitle">PARALLELISM ON 0 SATELLITES</p>
@@ -973,7 +979,7 @@
       <aside class="panel side">
         <div class="panel-title">
           <span>Orbit Inspector</span>
-          <span id="backend">GMAT REAL / SLURM REAL</span>
+          <span id="backend">ORBIT ONLY</span>
         </div>
         <div class="side-body">
           <section class="inspector" aria-label="Satellite orbital parameters">
@@ -1006,19 +1012,20 @@
         <section class="ops-section">
           <div class="ops-head">
             <span>Scheduler</span>
-            <strong>active</strong>
+            <strong id="schedulerState">ready</strong>
           </div>
           <div class="ops-list" aria-label="Scheduler status">
-            <div class="ops-row"><span class="ops-dot blue"></span><div><span>policy</span><b>min finish time</b></div></div>
-            <div class="ops-row"><span class="ops-dot"></span><div><span>target</span><b>compute:SAT003</b></div></div>
-            <div class="ops-row"><span class="ops-dot amber"></span><div><span>constraint</span><b>power margin guarded</b></div></div>
-            <div class="ops-row"><span class="ops-dot blue"></span><div><span>visibility</span><b>WGS84 ellipsoid</b></div></div>
+            <div class="ops-row"><span class="ops-dot blue"></span><div><span>policy</span><b id="schedulerPolicy">--</b></div></div>
+            <div class="ops-row"><span class="ops-dot"></span><div><span>target</span><b id="schedulerTarget">--</b></div></div>
+            <div class="ops-row"><span class="ops-dot amber"></span><div><span id="schedulerConstraintLabel">eclipse throughput</span><b id="schedulerConstraint">--</b></div></div>
+            <div class="ops-row"><span class="ops-dot blue"></span><div><span>modeled rate</span><b id="schedulerRate">--</b></div></div>
+            <div class="ops-row"><span class="ops-dot amber"></span><div><span>ground</span><b id="groundStatus">--</b></div></div>
           </div>
         </section>
         <section class="ops-section">
           <div class="ops-head">
             <span>Co-Scheduler</span>
-            <strong>linked</strong>
+            <strong id="commStatus">linked</strong>
           </div>
           <div id="commPanelMount" class="ops-list" aria-label="Communication co-scheduler status"></div>
         </section>
@@ -1028,6 +1035,8 @@
     <section class="bottom" id="nodeCards" aria-label="Satellite node health"></section>
   </main>
 
+  <script src="execution-replay.js" defer></script>
+  <script src="ground-track.js" defer></script>
   <script src="app.js" defer></script>
   <script src="comm-overlay.js" defer></script>
 

@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from oslurm.visibility import AnalyticEllipsoidVisibilityProvider, VisibilityQuery
+from oslurm.network.ground import above_mask, ground_state
 
 
 def norm(vec):
@@ -97,6 +98,59 @@ def slice_contacts(contacts_by_pair):
     for index, window in enumerate(windows, start=1):
         window["contact_id"] = f"{window['source']}:{window['destination']}:window-{index:04d}"
     return windows
+
+
+def interval_contacts(data: dict, max_range_m: float) -> dict:
+    """Conservative sampled windows; never extend past the final ephemeris epoch."""
+    by_time = {}
+    for sample in data["samples"]:
+        by_time.setdefault(sample["timestamp_ms"], {})[sample["node_id"]] = sample
+    times = sorted(by_time)
+    provider = AnalyticEllipsoidVisibilityProvider()
+    pairs = {}
+    sites = data.get("ground_stations", {})
+    elevation_rejected = range_rejected = 0
+    for start, end in zip(times, times[1:]):
+        common = sorted(by_time[start].keys() & by_time[end].keys())
+        for left, right in combinations(common, 2):
+            ranges, margins = [], []
+            for fraction in (0, 0.25, 0.5, 0.75, 1):
+                timestamp = start + fraction * (end - start)
+                positions = []
+                for node in (left, right):
+                    a = by_time[start][node]["position_eci_m"]
+                    b = by_time[end][node]["position_eci_m"]
+                    positions.append(ground_state(sites[node], timestamp)[0] if node in sites else
+                                     tuple(x + fraction * (y - x) for x, y in zip(a, b)))
+                if any(node in sites and not above_mask(sites[node], timestamp, positions[1 - index])
+                       for index, node in enumerate((left, right))):
+                    elevation_rejected += 1
+                    break
+                distance = norm(sub(*positions))
+                if distance > max_range_m:
+                    range_rejected += 1
+                    break
+                visibility = provider.evaluate(VisibilityQuery(
+                    source_id=left, destination_id=right,
+                    source_position_eci_m=positions[0], destination_position_eci_m=positions[1]))
+                if not visibility.geometrically_visible:
+                    break
+                ranges.append(distance)
+                margins.append(visibility.limb_clearance_m)
+            else:
+                pairs.setdefault((left, right), []).append({
+                    "source": left, "destination": right, "start_ms": start, "end_ms": end,
+                    "range_m": max(ranges), "occultation_margin_m": min(margins),
+                    "visibility": {"geometrically_visible": True, "earth_occulted": False,
+                                   "reason": "VISIBLE", "fidelity": "ellipsoid:wgs84"},
+                })
+    windows = slice_contacts(pairs)
+    return {"adapter": "gmat_comm_ephemeris.interval_contacts", "source": "GMAT",
+            "geometry_model": "5-point piecewise-linear ECI interval visibility" +
+                ("; GMST ground rotation and elevation mask" if sites else ""),
+            "contacts": windows, "metrics": {**provider.metrics.as_dict(),
+                "sampled_intervals": len(times) - 1, "window_count": len(windows),
+                "ground_elevation_rejected": elevation_rejected, "max_range_rejected": range_rejected}}
 
 
 def main() -> int:

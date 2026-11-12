@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import heapq
+import itertools
+import json
+import math
+import time
 
 from ..profile.recorder import FlightRecorder
 from ..profile.schema import TraceEventType
@@ -22,6 +27,12 @@ class MultiConstellationRuntime:
         self.connected: tuple[str, str] | None = None
         self.visibility = AnalyticEllipsoidVisibilityProvider(strict=True)
         self.positions_eci_m = _default_positions()
+        self.jobs: dict[str, dict[str, Any]] = {}
+        self.compute_profiles: dict[str, dict[str, Any]] = {}
+        self.contact_metadata: dict[str, Any] = {}
+        self.compute_available_at: dict[str, float] = {}
+        self._pending_events: list[tuple] = []
+        self._event_ids = itertools.count()
 
     def load_constellation(self, domain: str, path: str) -> str:
         file_path = Path(path)
@@ -33,9 +44,23 @@ class MultiConstellationRuntime:
         if not nodes:
             nodes = _default_nodes(domain)
         enum_domain = NetworkDomain(domain)
+        profiles = {}
+        if enum_domain == NetworkDomain.COMPUTE:
+            profile_path = data.get("compute_profiles")
+            if not profile_path:
+                raise ValueError("compute constellation requires compute_profiles JSON path")
+            profiles = json.loads((file_path.parent / str(profile_path)).read_text(encoding="utf-8"))
+            if not isinstance(profiles, dict) or any(not isinstance(p, dict) for p in profiles.values()):
+                raise ValueError("compute profiles must map node IDs to profile objects")
+            if any(node not in profiles for node in nodes):
+                raise ValueError("each compute node needs an explicit compute profile")
+            if any(node in self.compute_available_at for node in nodes):
+                raise ValueError("cannot reload compute nodes with scheduled jobs")
         self.constellations[constellation_id] = Constellation(constellation_id, enum_domain, nodes, data)
+        self.compute_profiles.update(profiles)
         for node in nodes:
-            self.network.set_buffer(node, BufferState(int(data.get("buffer_capacity_bytes", 128_000_000))))
+            if node not in self.network.buffers:
+                self.network.set_buffer(node, BufferState(int(data.get("buffer_capacity_bytes", 128_000_000))))
         self._install_default_contacts()
         return f"loaded {domain} constellation {constellation_id} nodes={','.join(nodes)}"
 
@@ -44,94 +69,174 @@ class MultiConstellationRuntime:
             return f"missing compute constellation {compute_id}"
         if comm_id not in self.constellations:
             return f"missing comm constellation {comm_id}"
+        if (self.constellations[compute_id].domain != NetworkDomain.COMPUTE
+                or self.constellations[comm_id].domain != NetworkDomain.COMM):
+            raise ValueError("connect requires a compute constellation and a comm constellation")
         self.connected = (compute_id, comm_id)
         self._install_default_contacts()
         return f"connected constellations {compute_id} <-> {comm_id}"
 
     def submit_job(self, path: str, recorder: FlightRecorder | None) -> str:
         job = _read_simple_yaml(self.root / path if not Path(path).is_absolute() else Path(path))
+        return self.submit_spec(job, recorder)
+
+    def submit_spec(self, job: dict[str, Any], recorder: FlightRecorder | None, *,
+                    schedule: bool = True, execution_mode: str = "modeled_compute_and_radio") -> str:
+        if self.connected is None:
+            raise ValueError("connect compute and comm constellations before submitting a job")
         job_id = str(job.get("job_id", "JOB001"))
+        if job_id in self.jobs:
+            raise ValueError(f"duplicate job ID {job_id}")
         input_source = str(job.get("input_source", "ground:MISSION-CONTROL"))
         result_destination = str(job.get("result_destination", "ground:MISSION-CONTROL"))
-        deadline_s = _duration_s(str(job.get("deadline", "2h")))
+        deadline_s = self.now_s + _duration_s(str(job.get("deadline", "2h")))
         input_bytes = int(job.get("input_bytes", 24_000_000))
         result_bytes = int(job.get("result_bytes", 8_000_000))
         planner = JointComputeNetworkPlanner(self.network)
-        decision = planner.choose(job_id, [
-            ComputeCandidate("compute:SAT001", 120.0, input_source, result_destination, input_bytes, result_bytes),
-            ComputeCandidate("compute:SAT003", 220.0, input_source, result_destination, input_bytes, result_bytes),
-        ], now_s=self.now_s, deadline_s=deadline_s)
+        candidates = []
+        for node in self.constellations[self.connected[0]].nodes:
+            profile = self.compute_profiles[node]
+            causes = []
+            current_soc = float(profile.get("soc", 1.0))
+            predicted_soc = float(profile.get("predicted_min_soc", current_soc))
+            current_temperature = float(profile.get("temperature_c", 20.0))
+            predicted_temperature = float(profile.get("predicted_max_temperature_c", current_temperature))
+            reserve = float(profile.get("reserve_soc", 0.30))
+            thermal_limit = float(profile.get("thermal_limit_c", 70.0))
+            if (not all(math.isfinite(v) for v in (current_soc, predicted_soc, current_temperature,
+                                                  predicted_temperature, reserve, thermal_limit))
+                    or not all(0 <= v <= 1 for v in (current_soc, predicted_soc, reserve))):
+                raise ValueError(f"invalid resource profile for {node}")
+            if min(current_soc, predicted_soc) < reserve:
+                causes.append("POWER_RESERVE")
+            if max(current_temperature, predicted_temperature) > thermal_limit:
+                causes.append("THERMAL_LIMIT")
+            candidates.append(ComputeCandidate(node, float(profile["compute_time_s"]), input_source,
+                result_destination, input_bytes, result_bytes,
+                max(float(profile.get("available_at_s", 0)), self.compute_available_at.get(node, 0)), tuple(causes)))
+        started = time.perf_counter_ns()
+        decision = planner.choose(job_id, candidates, now_s=self.now_s, deadline_s=deadline_s)
+        self.network.reserve_plans([decision.input_plan, decision.result_plan], now_s=self.now_s, commit=True)
+        planner_wall_ns = time.perf_counter_ns() - started
         self.last_decision = decision
         self.transfers[decision.input_plan.transfer_id] = decision.input_plan
         self.transfers[decision.result_plan.transfer_id] = decision.result_plan
-        self.network.reserve_plan(decision.input_plan, now_s=self.now_s)
-        self.network.reserve_plan(decision.result_plan, now_s=self.now_s)
-        self.network.commit_plan(decision.input_plan)
-        self.network.commit_plan(decision.result_plan)
+        self.compute_available_at[decision.selected_node] = decision.compute_finish_s
+        self.jobs[job_id] = {"decision": decision, "state": "input_pending"}
+        if schedule:
+            self._schedule_decision(decision)
         if recorder:
             cid = job_id
             for contact in self.network.contacts:
-                recorder.emit(TraceEventType.LINK_GEOMETRY_AVAILABLE, _ns(contact.start_s), node_id=contact.source, correlation_id=cid, payload={
+                recorder.emit(TraceEventType.LINK_GEOMETRY_AVAILABLE, _ns(self.now_s), node_id=contact.source, correlation_id=cid, payload={
                     "contact_id": contact.contact_id,
                     "source": contact.source,
                     "destination": contact.destination,
                     "bandwidth_bps": contact.bandwidth_bps,
                     "confidence": contact.confidence,
+                    "start_s": contact.start_s,
+                    "end_s": contact.end_s,
                 })
             recorder.emit(TraceEventType.JOB_SUBMITTED, _ns(self.now_s), job_id=job_id, correlation_id=cid, payload={"input_bytes": input_bytes, "result_bytes": result_bytes})
             recorder.emit(TraceEventType.TRANSFER_SUBMITTED, _ns(self.now_s), job_id=job_id, correlation_id=cid, payload={"transfer_id": decision.input_plan.transfer_id, "source": input_source, "destination": decision.selected_node})
             recorder.emit(TraceEventType.TRANSFER_PLANNED, _ns(self.now_s), job_id=job_id, correlation_id=cid, payload=decision.input_plan.as_dict())
             recorder.emit(TraceEventType.TRANSFER_PLANNED, _ns(self.now_s), job_id=job_id, correlation_id=cid, payload=decision.result_plan.as_dict())
-            for reservation in self.network.reservations.values():
-                if reservation.transfer_id in {decision.input_plan.transfer_id, decision.result_plan.transfer_id}:
-                    recorder.emit(TraceEventType.LINK_RESERVATION_CREATED, _ns(self.now_s), job_id=job_id, correlation_id=cid, payload={
-                        "reservation_id": reservation.reservation_id,
-                        "transfer_id": reservation.transfer_id,
-                        "source": reservation.hop.source,
-                        "destination": reservation.hop.destination,
-                        "state": reservation.state.value,
-                    })
-            recorder.emit(TraceEventType.JOINT_PLANNER_DECISION, _ns(self.now_s + 0.001), job_id=job_id, node_id=decision.selected_node, correlation_id=cid, payload={
+            self._record_reservations([decision.input_plan, decision.result_plan], recorder, job_id)
+            recorder.emit(TraceEventType.JOINT_PLANNER_DECISION, _ns(self.now_s), job_id=job_id, node_id=decision.selected_node, correlation_id=cid, payload={
                 "selected_node": decision.selected_node,
                 "candidate_results": decision.candidate_reports,
                 "rationale": decision.rationale,
-                "network_changed_compute_placement": True,
-                "visibility_metrics": self.visibility.metrics.as_dict(),
-                "cost": {"wall_time_ns": 250000, "candidates_evaluated": len(decision.candidate_reports)},
+                "network_changed_compute_placement": decision.selected_node != decision.compute_only_node,
+                "compute_only_node": decision.compute_only_node,
+                "compute_start_s": decision.compute_start_s,
+                "compute_finish_s": decision.compute_finish_s,
+                "execution_mode": execution_mode,
+                "visibility_metrics": self.contact_metadata.get("metrics", self.visibility.metrics.as_dict()),
+                "cost": {"wall_time_ns": planner_wall_ns, "candidates_evaluated": len(decision.candidate_reports)},
             })
-            recorder.emit(TraceEventType.SCHEDULER_DECISION, _ns(self.now_s + 0.002), job_id=job_id, node_id=decision.selected_node, correlation_id=cid, payload={
+            recorder.emit(TraceEventType.SCHEDULER_DECISION, _ns(self.now_s), job_id=job_id, node_id=decision.selected_node, correlation_id=cid, payload={
                 "trigger": "JOINT_NETWORK_PLANNING",
                 "selected_action": {"node_id": decision.selected_node, "changed": True},
                 "candidates_feasible": sum(1 for r in decision.candidate_reports if r.get("feasible")),
                 "candidate_results": decision.candidate_reports,
-                "cost": {"wall_time_ns": 250000, "candidates_evaluated": len(decision.candidate_reports)},
+                "cost": {"wall_time_ns": planner_wall_ns, "candidates_evaluated": len(decision.candidate_reports)},
             })
         return f"submitted {job_id} selected={decision.selected_node} finish={decision.total_finish_s:.1f}s"
 
     def run(self, duration: str, recorder: FlightRecorder | None) -> str:
         end_s = self.now_s + _duration_s(duration)
-        if self.last_decision and recorder:
-            job_id = self.last_decision.job_id
-            cid = job_id
-            for plan in [self.last_decision.input_plan, self.last_decision.result_plan]:
-                recorder.emit(TraceEventType.TRANSFER_STARTED, _ns(plan.hops[0].start_s), job_id=job_id, correlation_id=cid, payload={"transfer_id": plan.transfer_id, "path_kind": plan.path_kind.value})
-                for hop in plan.hops:
-                    recorder.emit(TraceEventType.TRANSFER_HOP_BEGIN, _ns(hop.start_s), job_id=job_id, node_id=hop.source, correlation_id=cid, payload={"transfer_id": plan.transfer_id, "contact_id": hop.contact_id, "destination": hop.destination, "bytes": hop.reserved_bytes})
-                    if len(plan.hops) > 1 and hop is plan.hops[0]:
-                        recorder.emit(TraceEventType.TRANSFER_BUFFERED, _ns(hop.end_s), job_id=job_id, node_id=hop.destination, correlation_id=cid, payload={"transfer_id": plan.transfer_id, "buffered_bytes": hop.reserved_bytes})
-                    recorder.emit(TraceEventType.TRANSFER_HOP_END, _ns(hop.end_s), job_id=job_id, node_id=hop.destination, correlation_id=cid, payload={"transfer_id": plan.transfer_id, "contact_id": hop.contact_id})
-                recorder.emit(TraceEventType.TRANSFER_COMPLETED, _ns(plan.predicted_finish_s), job_id=job_id, correlation_id=cid, payload={"transfer_id": plan.transfer_id, "bytes": plan.hops[-1].reserved_bytes})
-            compute_start = self.last_decision.input_plan.predicted_finish_s
-            recorder.emit(TraceEventType.JOB_STARTED, _ns(compute_start), job_id=job_id, node_id=self.last_decision.selected_node, correlation_id=cid)
-            recorder.emit(TraceEventType.COMPUTE_COMPLETED, _ns(self.last_decision.result_plan.hops[0].start_s), job_id=job_id, node_id=self.last_decision.selected_node, correlation_id=cid)
-            recorder.emit(TraceEventType.MISSION_JOB_COMPLETED, _ns(self.last_decision.total_finish_s), job_id=job_id, node_id=self.last_decision.selected_node, correlation_id=cid)
-            recorder.emit(TraceEventType.JOB_COMPLETED, _ns(self.last_decision.total_finish_s), job_id=job_id, node_id=self.last_decision.selected_node, correlation_id=cid)
+        if not math.isfinite(end_s) or end_s < self.now_s:
+            raise ValueError("run duration must be finite and non-negative")
+        while self._pending_events and self._pending_events[0][0] <= end_s:
+            at_s, _, event_type, job_id, node_id, payload = heapq.heappop(self._pending_events)
+            if event_type == TraceEventType.TRANSFER_COMPLETED:
+                plan = self.transfers[payload["transfer_id"]]
+                self.network.complete_plan(plan, now_s=at_s)
+                if recorder:
+                    for reservation in self.network.reservations.values():
+                        if reservation.transfer_id == plan.transfer_id:
+                            recorder.emit(TraceEventType.LINK_RESERVATION_COMPLETED, _ns(at_s), job_id=job_id,
+                                          correlation_id=job_id, payload={"reservation_id": reservation.reservation_id,
+                                          "transfer_id": plan.transfer_id, "state": reservation.state.value})
+            if job_id in self.jobs:
+                state = {TraceEventType.JOB_STARTED: "computing", TraceEventType.COMPUTE_COMPLETED: "result_pending",
+                         TraceEventType.MISSION_JOB_COMPLETED: "completed"}.get(event_type)
+                if state:
+                    self.jobs[job_id]["state"] = state
+            if recorder:
+                recorder.emit(event_type, _ns(at_s), job_id=job_id, node_id=node_id,
+                              correlation_id=job_id, payload=payload)
         expired = self.network.expire(end_s)
         for reservation in expired:
             if recorder:
                 recorder.emit(TraceEventType.LINK_RESERVATION_EXPIRED, _ns(end_s), payload={"reservation_id": reservation.reservation_id, "transfer_id": reservation.transfer_id})
         self.now_s = end_s
         return f"advanced network runtime to T+{self.now_s:.1f}s transfers={len(self.transfers)}"
+
+    def _enqueue(self, at_s: float, event_type: TraceEventType, job_id: str | None,
+                 node_id: str | None = None, payload: dict | None = None) -> None:
+        heapq.heappush(self._pending_events, (at_s, next(self._event_ids), event_type, job_id, node_id, payload or {}))
+
+    def _record_reservations(self, plans: list[TransferPlan], recorder: FlightRecorder,
+                             job_id: str | None) -> None:
+        transfer_ids = {p.transfer_id for p in plans}
+        for reservation in self.network.reservations.values():
+            if reservation.transfer_id not in transfer_ids:
+                continue
+            for event_type, state in ((TraceEventType.LINK_RESERVATION_CREATED, "accepted"),
+                                      (TraceEventType.LINK_RESERVATION_COMMITTED, "committed")):
+                recorder.emit(event_type, _ns(self.now_s), job_id=job_id, correlation_id=job_id, payload={
+                    "reservation_id": reservation.reservation_id, "transfer_id": reservation.transfer_id,
+                    "source": reservation.hop.source, "destination": reservation.hop.destination, "state": state})
+
+    def _schedule_transfer(self, plan: TransferPlan, job_id: str | None) -> None:
+        self._enqueue(plan.hops[0].start_s, TraceEventType.TRANSFER_STARTED, job_id,
+                      payload={"transfer_id": plan.transfer_id, "path_kind": plan.path_kind.value})
+        for index, hop in enumerate(plan.hops):
+            self._enqueue(hop.start_s, TraceEventType.TRANSFER_HOP_BEGIN, job_id, hop.source,
+                          {"transfer_id": plan.transfer_id, "contact_id": hop.contact_id,
+                           "destination": hop.destination, "bytes": hop.reserved_bytes})
+            self._enqueue(hop.end_s, TraceEventType.TRANSFER_HOP_END, job_id, hop.destination,
+                          {"transfer_id": plan.transfer_id, "contact_id": hop.contact_id})
+            if index < len(plan.hops) - 1:
+                self._enqueue(hop.end_s, TraceEventType.TRANSFER_BUFFERED, job_id, hop.destination,
+                              {"transfer_id": plan.transfer_id, "buffered_bytes": hop.reserved_bytes})
+        self._enqueue(plan.predicted_finish_s, TraceEventType.TRANSFER_COMPLETED, job_id,
+                      payload={"transfer_id": plan.transfer_id, "bytes": plan.hops[-1].reserved_bytes})
+
+    def _schedule_decision(self, decision: JointDecision) -> None:
+        self._schedule_transfer(decision.input_plan, decision.job_id)
+        self._enqueue(decision.compute_start_s, TraceEventType.JOB_STARTED, decision.job_id, decision.selected_node)
+        self._enqueue(decision.compute_finish_s, TraceEventType.COMPUTE_COMPLETED, decision.job_id, decision.selected_node)
+        self._schedule_transfer(decision.result_plan, decision.job_id)
+        for event_type in (TraceEventType.MISSION_JOB_COMPLETED, TraceEventType.JOB_COMPLETED):
+            self._enqueue(decision.total_finish_s, event_type, decision.job_id, decision.selected_node)
+
+    def show_jobs(self) -> str:
+        return "\n".join(f"{job_id}: {job['state']} node={job['decision'].selected_node} "
+                         f"compute={job['decision'].compute_start_s:.1f}-{job['decision'].compute_finish_s:.1f}s "
+                         f"delivery={job['decision'].total_finish_s:.1f}s"
+                         for job_id, job in self.jobs.items()) or "no jobs"
 
     def show_constellations(self) -> str:
         if not self.constellations:
@@ -214,9 +319,12 @@ class MultiConstellationRuntime:
         if not plans:
             return f"transfer {transfer_id} no route"
         plan = plans[0]
+        self.network.reserve_plans([plan], now_s=self.now_s, commit=True)
         self.transfers[transfer_id] = plan
+        self._schedule_transfer(plan, None)
         if recorder:
             recorder.emit(TraceEventType.TRANSFER_PLANNED, _ns(self.now_s), payload=plan.as_dict())
+            self._record_reservations([plan], recorder, None)
         return f"transfer {transfer_id} planned {plan.path_kind.value} finish={plan.predicted_finish_s:.1f}s"
 
     def _install_default_contacts(self) -> None:
@@ -244,7 +352,8 @@ class MultiConstellationRuntime:
         result = self.visibility.evaluate(query)
         if not result.geometrically_visible:
             return None
-        return ContactWindow(contact_id, source, destination, start_s, end_s, bandwidth_bps, bytes_, latency_ms, survival, confidence, kind, visibility=result)
+        return ContactWindow(contact_id, source, destination, start_s, end_s, bandwidth_bps, bytes_, latency_ms, survival, confidence, kind,
+                             source_terminal="radio0", destination_terminal="radio0", visibility=result)
 
     def _visibility_query(self, source: str, destination: str) -> VisibilityQuery:
         source = _canonical_node(source)
@@ -347,7 +456,7 @@ def _ns(seconds: float) -> int:
 
 def _read_simple_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return {}
+        raise FileNotFoundError(path)
     data: dict[str, Any] = {}
     current_list: str | None = None
     for raw in path.read_text(encoding="utf-8").splitlines():

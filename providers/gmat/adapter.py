@@ -34,11 +34,15 @@ def _circular_state(radius_km: float, phase_deg: float, inclination_deg: float =
     return x, y, z, vx, vy, vz
 
 
-def write_gmat_script(report_path: Path) -> str:
+def write_gmat_script(report_path: Path, horizon_s: int = 720, step_s: int = 60, include_relays: bool = False) -> str:
+    if horizon_s <= 0 or step_s <= 0 or horizon_s % step_s:
+        raise ValueError("horizon_s must be a positive multiple of step_s")
     phases = {"sat001": 100.0, "sat002": 190.0, "sat003": 280.0, "sat004": 10.0}
+    if include_relays:
+        phases.update(relay_a=0.0, relay_b=120.0)
     lines = []
     for node, phase in phases.items():
-        x, y, z, vx, vy, vz = _circular_state(6921.0, phase)
+        x, y, z, vx, vy, vz = _circular_state(42164.0 if node.startswith("relay") else 6921.0, phase)
         lines += [
             f"Create Spacecraft {node};",
             f"{node}.DateFormat = UTCGregorian;",
@@ -82,8 +86,8 @@ def write_gmat_script(report_path: Path) -> str:
     for node in phases:
         report_cols += [f"{node}.A1ModJulian", f"{node}.X", f"{node}.Y", f"{node}.Z", f"{node}.VX", f"{node}.VY", f"{node}.VZ"]
     lines.append("Report RF " + " ".join(report_cols) + ";")
-    lines.append("For i = 1:12")
-    lines.append("  Propagate Prop(sat001, sat002, sat003, sat004) {sat001.ElapsedSecs = 60};")
+    lines.append(f"For i = 1:{horizon_s // step_s}")
+    lines.append(f"  Propagate Prop({', '.join(phases)}) {{sat001.ElapsedSecs = {step_s}}};")
     lines.append("  Report RF " + " ".join(report_cols) + ";")
     lines.append("EndFor")
     return "\n".join(lines) + "\n"
@@ -94,16 +98,21 @@ def _in_sunlight(position_km: tuple[float, float, float]) -> bool:
     return not (x < 0.0 and math.sqrt(y * y + z * z) < EARTH_RADIUS_KM)
 
 
-def parse_gmat_report(report_path: Path) -> dict:
+def parse_gmat_report(report_path: Path, include_relays: bool = False) -> dict:
     samples = []
     events = []
     last_sun: dict[str, bool] = {}
     rows = [line.strip() for line in report_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     data_rows = [row for row in rows if not row.startswith("sat")]
     nodes = ["sat001", "sat002", "sat003", "sat004"]
-    for row_idx, row in enumerate(data_rows):
+    if include_relays:
+        nodes += ["RELAY-A", "RELAY-B"]
+    epoch_a1 = None
+    for row in data_rows:
         values = [float(x.strip()) for x in row.split(",")]
-        timestamp_ms = GMAT_EPOCH_UNIX_MS + row_idx * 60_000
+        if epoch_a1 is None:
+            epoch_a1 = values[0]
+        timestamp_ms = GMAT_EPOCH_UNIX_MS + round((values[0] - epoch_a1) * 86_400_000)
         for node_idx, node in enumerate(nodes):
             base = node_idx * 7
             x, y, z = values[base + 1], values[base + 2], values[base + 3]
@@ -130,13 +139,13 @@ def parse_gmat_report(report_path: Path) -> dict:
     return {"samples": samples, "events": events}
 
 
-def real_gmat_ephemeris(executable: str) -> dict:
+def real_gmat_ephemeris(executable: str, horizon_s: int = 720, step_s: int = 60, include_relays: bool = False) -> dict:
     exe = Path(executable)
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         report_path = tmp_path / "oslurm_gmat_report.csv"
         script_path = tmp_path / "oslurm_leo_demo.script"
-        script_path.write_text(write_gmat_script(report_path), encoding="utf-8")
+        script_path.write_text(write_gmat_script(report_path, horizon_s, step_s, include_relays), encoding="utf-8")
         result = subprocess.run(
             [str(exe), "--run", str(script_path), "--exit", "--verbose", "off"],
             cwd=str(exe.parent),
@@ -146,10 +155,10 @@ def real_gmat_ephemeris(executable: str) -> dict:
         )
         if result.returncode != 0:
             raise RuntimeError((result.stdout + result.stderr)[-4000:])
-        return parse_gmat_report(report_path)
+        return parse_gmat_report(report_path, include_relays)
 
 
-def mock_leo_ephemeris() -> dict:
+def mock_leo_ephemeris(horizon_s: int = 720, step_s: int = 60) -> dict:
     t0 = 1787220000000
     nodes = ["sat001", "sat002", "sat003", "sat004"]
     samples = []
@@ -159,7 +168,7 @@ def mock_leo_ephemeris() -> dict:
     for idx, node in enumerate(nodes):
         phase = idx * math.pi / 2.0
         was_sun = None
-        for t_s in range(0, 721, 60):
+        for t_s in range(0, horizon_s + 1, step_s):
             theta = 2.0 * math.pi * t_s / period_s + phase
             pos = (radius * math.cos(theta), radius * math.sin(theta), 120_000.0 * math.sin(theta * 0.5))
             vel = (-radius * math.sin(theta) * 2.0 * math.pi / period_s, radius * math.cos(theta) * 2.0 * math.pi / period_s, 0.0)
@@ -192,14 +201,18 @@ def main() -> int:
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--allow-mock", action="store_true")
+    parser.add_argument("--horizon-s", type=int, default=720)
+    parser.add_argument("--step-s", type=int, default=60)
     args = parser.parse_args()
+    if args.horizon_s <= 0 or args.step_s <= 0 or args.horizon_s % args.step_s:
+        parser.error("--horizon-s must be a positive multiple of --step-s")
 
     backend = detect_backend()
     if backend.real:
         print(f"GMAT backend: {backend.mode}")
         if backend.executable:
             print(f"Executable: {backend.executable}")
-            Path(args.output).write_text(json.dumps(real_gmat_ephemeris(backend.executable), indent=2), encoding="utf-8")
+            Path(args.output).write_text(json.dumps(real_gmat_ephemeris(backend.executable, args.horizon_s, args.step_s), indent=2), encoding="utf-8")
             return 0
         raise SystemExit("Real GMAT Python API was detected but is not implemented in this adapter")
     if not args.allow_mock:
@@ -208,7 +221,7 @@ def main() -> int:
         return 2
     print("GMAT backend: mock")
     print(f"Reason: {backend.reason}")
-    Path(args.output).write_text(json.dumps(mock_leo_ephemeris(), indent=2), encoding="utf-8")
+    Path(args.output).write_text(json.dumps(mock_leo_ephemeris(args.horizon_s, args.step_s), indent=2), encoding="utf-8")
     return 0
 
 

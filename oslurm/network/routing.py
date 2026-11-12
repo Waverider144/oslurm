@@ -5,7 +5,7 @@ from .models import BufferState, ContactWindow, TransferHop, TransferIntent, Tra
 
 def _hop(intent: TransferIntent, contact: ContactWindow, start_after_s: float) -> TransferHop | None:
     start_s = max(contact.start_s, start_after_s)
-    duration_s = intent.bytes * 8.0 / max(1, contact.bandwidth_bps)
+    duration_s = contact.acquisition_s + intent.bytes * 8.0 / max(1, contact.bandwidth_bps) + contact.latency_ms / 1000.0
     end_s = start_s + duration_s
     if end_s > contact.end_s:
         return None

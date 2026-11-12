@@ -1,0 +1,7 @@
+job_id: JOB002
+input_source: ground:MISSION-CONTROL
+result_destination: ground:MISSION-CONTROL
+input_bytes: 24000000
+result_bytes: 8000000
+deadline: 2h
+mission_phase: tactical-inference

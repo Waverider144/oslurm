@@ -7,6 +7,7 @@
     }
 
     start() {
+          const root = this.root;
           const MU = 398600.4418;
           const EARTH_EQUATORIAL_RADIUS_KM = 6378.137;
           const EARTH_POLAR_RADIUS_KM = 6356.752314245;
@@ -53,12 +54,16 @@
           const commandState = this.root.querySelector("#commandState");
           const sendCommand = this.root.querySelector("#sendCommand");
           const resetCommand = this.root.querySelector("#resetCommand");
+          const schedulerTarget = this.root.querySelector("#schedulerTarget");
+          const schedulerState = this.root.querySelector("#schedulerState");
       
           let ephemeris = fallbackEphemeris;
+          let executionReplay = null;
           let byNode = new Map();
           let nodes = [];
           let selectedNode = "sat001";
           let activeIndex = 0;
+          let simulationTimeS = 0;
           let inspectorIndex = 0;
           let activeTone = new Map([["sat001", "blue"]]);
           let statusMode = "sat";
@@ -72,6 +77,7 @@
           let eventStore = [];
           let earthTextureData = null;
           let renderFrame = 0;
+          const groundTrack = new window.GroundTrackView(() => render());
       
           function kmVec(sample) {
             return {
@@ -168,7 +174,14 @@
           }
       
           function setClock(elapsedSeconds = null) {
+            simulationTimeS = elapsedSeconds === null ? (sampleAtIndex().timestamp_ms - ephemeris.samples[0].timestamp_ms) / 1000 : elapsedSeconds;
             clock.textContent = elapsedSeconds === null ? utcForIndex(activeIndex) : utcForElapsed(elapsedSeconds);
+            updateTelemetryCards();
+            const autonomy = executionReplay?.result.autonomy;
+            if (autonomy) {
+              root.querySelector("#groundStatus").textContent = simulationTimeS >= autonomy.ground_disconnect_s ? "disconnected" : "connected";
+              root.querySelector("#schedulerConstraint").textContent = simulationTimeS > autonomy.authority_until_s ? "lease expired" : `lease T+${autonomy.authority_until_s}s`;
+            }
           }
       
           function updateInspector() {
@@ -193,65 +206,22 @@
           }
       
           function slurmTemplate(node) {
-            const sample = sampleFor(node);
-            if (!sample) return "";
-            const el = orbitalElements(sample);
-            const simSpanS = orbitPeriodSeconds(node);
-            const cpus = node === "sat001" ? 2 : 1;
-            const mem = node === "sat004" ? 768 : 512;
-            const minutes = 12;
-            const eci = sample.position_eci_m.map((v) => Math.round(v)).join(",");
+            if (!executionReplay) return "";
+            const result = executionReplay.result;
             return [
               "#!/usr/bin/env bash",
-              `#SBATCH --job-name=oslurm-${node}-orbit-profile-axb`,
-              "#SBATCH --nodelist=sat[001-004]",
-              "#SBATCH --ntasks=4",
-              `#SBATCH --cpus-per-task=${cpus}`,
-              `#SBATCH --mem=${mem}M`,
-              `#SBATCH --time=00:${String(minutes).padStart(2, "0")}:00`,
-              "#SBATCH --output=.oslurm-state/slurm-%j.out",
-              "",
-              "export OSLURM_PROFILE_RUN=visual-orbit-axb",
-              `export OSLURM_NODE=${node}`,
-              "export OSLURM_TARGETS=sat001,sat002,sat003,sat004",
-              "export OSLURM_MATRIX_DIM=65536",
-              "export OSLURM_SOLVER=cg",
-              "export OSLURM_MAX_ITER=768",
-              "export OSLURM_TOL=1e-8",
-              `export OSLURM_SIM_SPAN_S=${simSpanS}`,
-              `export OSLURM_ECI_M=${eci}`,
-              `export OSLURM_A_KM=${el.a.toFixed(1)}`,
-              `export OSLURM_ALTITUDE_KM=${el.altitude.toFixed(1)}`,
-              `export OSLURM_INCLINATION_DEG=${el.inc.toFixed(2)}`,
-              `export OSLURM_SUNLIGHT=${el.sunlight ? "1" : "0"}`,
-              "",
-              "python3 -m oslurm.cli <<OSLURM_PROFILE",
-              "load constellation compute configs/compute-ai.yaml",
-              "load constellation comm configs/relay-public.yaml",
-              "connect constellations compute-ai relay-public",
-              "profile on --mode full --trace --run-id ${OSLURM_PROFILE_RUN}",
-              "submit job workloads/inference.yaml",
-              "profile status",
-              "profile network",
-              "profile timeline JOB001",
-              "profile export profiles/${OSLURM_PROFILE_RUN}/perfetto.json --time-axis simulation",
-              "profile off",
-              "OSLURM_PROFILE",
-              "",
-              "python3 - <<'PY'",
-              "import os",
-              "import math",
-              "node = os.environ['OSLURM_NODE']",
-              "dim = int(os.environ['OSLURM_MATRIX_DIM'])",
-              "sim_span = int(os.environ['OSLURM_SIM_SPAN_S'])",
-              "tol = float(os.environ['OSLURM_TOL'])",
-              "residual = 1.0",
-              "print(f'uplink accepted by {node}: solve Ax=b dim={dim} sim_span={sim_span}s')",
-              "for iteration in range(0, int(os.environ['OSLURM_MAX_ITER']) + 1, 24):",
-              "    residual = max(tol, math.exp(-iteration / 105.0))",
-              "    print(f'iter={iteration:03d} residual={residual:.3e}')",
-              "print('solver status: converged')",
-              "PY"
+              `# run_id=${result.run_id}`,
+              `# GMAT=${result.gmat_backend} execution=${result.execution_backend}`,
+              `# horizon=${result.horizon_s}s; iterations/sim-second=${result.iterations_per_sim_s}`,
+              `#SBATCH --job-name=${result.job_id}`,
+              "python3 -m oslurm.orbit_benchmark \\",
+              `  --backend ${result.execution_backend} --dimension ${result.dimension} \\`,
+              `  --iteration-rate ${result.iterations_per_sim_s} --policy ${result.policy} \\`,
+              `  --eclipse-factor ${result.eclipse_throughput_factor} --seed ${result.seed} --tolerance ${result.tolerance} \\`,
+              `  --checkpoint-transport ${result.checkpoint_transport || "shared"} --comm-bandwidth-mbps ${result.comm_bandwidth_mbps || 8} \\`,
+              `  --comm-max-range-m ${result.comm_max_range_m || 80000000} --relay-buffer-mb ${result.relay_buffer_mb ?? 64} \\`,
+              `  --initial-soc ${result.initial_soc ?? 0.42} --initial-temperature-c ${result.initial_temperature_c ?? 42} \\`,
+              `  --ground-disconnect-s ${result.autonomy?.ground_disconnect_s ?? 240}${result.autonomy ? ` --authority-until-s ${result.autonomy.authority_until_s}` : ""} --publish`
             ].join("\n");
           }
       
@@ -285,7 +255,7 @@
 
           function updateJobStrip(jobName = commandJobName()) {
             const count = gmatSatelliteCount();
-            jobTitle.textContent = `PARALLELISM ON ${count} SATELLITES`;
+            jobTitle.textContent = executionReplay ? `Ax=b ON ${count} SATELLITES` : `PARALLELISM ON ${count} SATELLITES`;
             jobMeta.textContent = `${jobName} / ${count} GMAT satellites`;
           }
       
@@ -308,7 +278,7 @@
             commandTimers.forEach((timer) => window.clearTimeout(timer));
             commandTimers = [];
             stopCommandOrbitReplay();
-            sendCommand.disabled = false;
+            sendCommand.disabled = !executionReplay;
           }
 
           function stopCommandOrbitReplay() {
@@ -322,7 +292,9 @@
             const startedAt = performance.now();
             commandOrbitTimer = window.setInterval(() => {
               const ratio = Math.max(0, Math.min(1, (performance.now() - startedAt) / Math.max(1, durationMs)));
-              activeIndex = Math.max(0, Math.min(sampleCount - 1, Math.round(ratio * (sampleCount - 1))));
+              const simS = ratio * executionReplay.horizonS;
+              activeIndex = executionReplay.indexAt(simS);
+              setClock(simS);
               render();
             }, 320);
           }
@@ -332,107 +304,54 @@
             commandOutput.scrollTop = commandOutput.scrollHeight;
           }
       
-          function buildMatrixReplay(script, targets, nodelist, cpus, mem, timeLimit) {
-            const taskCount = parseDirective(script, "ntasks") || String(targets.length);
-            const dim = parseEnv(script, "OSLURM_MATRIX_DIM") || "4096";
-            const solver = parseEnv(script, "OSLURM_SOLVER") || "cg";
-            const maxIter = Number(parseEnv(script, "OSLURM_MAX_ITER") || 96);
-            const simSpan = Number(parseEnv(script, "OSLURM_SIM_SPAN_S") || orbitPeriodSeconds());
-            const tol = parseEnv(script, "OSLURM_TOL") || "1e-8";
-            const iterStep = maxIter >= 240 ? 24 : 12;
-            const steps = [
-              { dt: 0, simS: 0, tone: "blue", source: "execution", focus: targets[0], progress: "3%", line: `$ osbatch --parallel --targets ${targets.join(",")}` },
-              { dt: 360, simS: 12, tone: "blue", source: "execution", progress: "7%", line: `parsed: nodelist=${nodelist} ntasks=${taskCount} cpus=${cpus} mem=${mem} time=${timeLimit}` },
-              { dt: 720, simS: 24, tone: "blue", source: "execution", progress: "10%", line: `slurm: sbatch --nodelist=${nodelist} --ntasks=${taskCount} --cpus-per-task=${cpus} --mem=${mem}` },
-              { dt: 1060, simS: 36, tone: "blue", source: "scheduler", progress: "13%", line: "profile: python3 -m oslurm.cli profile on --mode full --trace" },
-              { dt: 1380, simS: 48, tone: "blue", source: "scheduler", progress: "16%", line: "profile: submit job workloads/inference.yaml / profile status active" },
-              { dt: 1740, simS: 60, tone: "blue", source: "execution", progress: "20%", line: `uplink: dispatch Ax=b solver=${solver} dim=${dim} tol=${tol} sim_span=${Math.round(simSpan)}s` }
-            ];
-            targets.forEach((target, index) => {
-              steps.push({
-                dt: 2140 + index * 180,
-                simS: 90 + index * 18,
-                tone: "blue",
-                source: "execution",
-                focus: target,
-                progress: `${24 + index * 4}%`,
-                line: `satellite ${target}: lease accepted / matrix shard=${index + 1}/${targets.length}`
-              });
-            });
-            const solveStartMs = 3100;
-            const solveDurationMs = 19000;
-            const solveStartSim = Math.max(120, simSpan * 0.04);
-            const solveEndSim = simSpan * 0.96;
-            for (let iter = 0; iter <= maxIter; iter += iterStep) {
-              const ratio = iter / Math.max(1, maxIter);
-              const residual = Math.max(Number(tol), Math.exp(-iter / 105.0));
-              const pct = Math.min(86, 32 + Math.round((iter / Math.max(1, maxIter)) * 52));
-              const focus = targets[Math.floor(iter / iterStep) % targets.length] || selectedNode;
-              steps.push({
-                dt: solveStartMs + ratio * solveDurationMs,
-                simS: solveStartSim + ratio * (solveEndSim - solveStartSim),
-                tone: residual < 0.02 ? "green" : "blue",
-                source: "compute",
-                focus,
-                progress: `${pct}%`,
-                line: `solve: iter=${String(iter).padStart(3, "0")} residual=${residual.toExponential(3)} active=${focus}`
-              });
-            }
-            steps.push(
-              { dt: solveStartMs + solveDurationMs + 800, simS: simSpan * 0.972, tone: "amber", source: "orbital", focus: "sat001", progress: "88%", line: "orbital event: sat001 eclipse entry / power margin degraded" },
-              { dt: solveStartMs + solveDurationMs + 1400, simS: simSpan * 0.982, tone: "blue", source: "scheduler", focus: "sat004", progress: "93%", line: "scheduler: rebalance remaining Krylov updates to sat004" },
-              { dt: solveStartMs + solveDurationMs + 2200, simS: simSpan * 0.995, tone: "green", source: "compute", focus: "sat004", progress: "100%", line: "reduce: residual=8.742e-09 / solver status: converged" },
-              { dt: solveStartMs + solveDurationMs + 2700, simS: simSpan, tone: "green", source: "scheduler", progress: "100%", line: "profile: export perfetto.json / profile off" },
-              { dt: solveStartMs + solveDurationMs + 3100, simS: simSpan, tone: "green", source: "compute", progress: "100%", line: "exit_code=0" }
-            );
-            return steps;
-          }
-      
           function runCommandSimulation() {
             clearCommandTimers();
-            const script = commandInput.value;
-            const nodelist = parseDirective(script, "nodelist") || selectedNode;
-            const envTargets = parseEnv(script, "OSLURM_TARGETS");
-            const targets = envTargets ? envTargets.split(",").map((node) => node.trim()).filter(Boolean) : expandNodeList(nodelist);
-            const cpus = parseDirective(script, "cpus-per-task") || "1";
-            const mem = parseDirective(script, "mem") || "512M";
-            const timeLimit = parseDirective(script, "time") || "00:02:00";
-            const replay = buildMatrixReplay(script, targets, nodelist, cpus, mem, timeLimit);
+            if (!executionReplay) {
+              appendOutput("No execution trace available.");
+              commandState.textContent = "unavailable";
+              return;
+            }
+            const replay = executionReplay.steps();
             commandOutput.textContent = "";
-            commandState.textContent = "running";
+            commandState.textContent = "replaying";
             sendCommand.disabled = true;
-            loopStatus.textContent = "Executing";
+            loopStatus.textContent = "Replay";
             updateJobStrip(commandJobName());
             jobProgress.style.width = "0%";
             eventStore = [];
             renderEvents();
             const sampleCount = Math.max(1, ...nodes.map((node) => (byNode.get(node) || []).length));
-            const replayDurationMs = Math.max(1, ...replay.map((step) => step.dt));
-            const replaySimSpan = Math.max(1, ...replay.map((step) => Number.isFinite(step.simS) ? step.simS : step.dt / 100));
+            const replayDurationMs = executionReplay.durationMs;
             startCommandOrbitReplay(replayDurationMs, sampleCount);
             addEventDivider(`START UTC ${utcForElapsed(0)}`);
-            addEvent({ t: formatElapsed(0), tone: "blue", source: "scheduler", text: `scheduler accepted Ax=b command on ${targets.length} satellites` });
+            appendOutput(`run=${executionReplay.bundle.run_id} backend=${executionReplay.result.execution_backend}`);
             replay.forEach((step, idx) => {
               const timer = window.setTimeout(() => {
-                const elapsedS = Math.round(Number.isFinite(step.simS) ? step.simS : step.dt / 100);
+                const elapsedS = Number.isFinite(step.simS) ? step.simS : step.dt / 100;
                 if (step.progress) jobProgress.style.width = step.progress;
                 const orbitIndex = Number.isInteger(step.index)
                   ? step.index
-                  : Math.round((elapsedS / replaySimSpan) * (sampleCount - 1));
+                  : executionReplay.indexAt(elapsedS);
                 activeIndex = Math.max(0, Math.min(sampleCount - 1, orbitIndex));
                 setClock(elapsedS);
                 if (step.focus) {
-                  setNodeTone(step.focus, step.tone, step.tone === "amber" ? "eclipse" : step.tone === "green" ? "done" : "solve");
+                  const labels = { JOB_PROGRESS: "solve", JOB_STARTED: "solve", JOB_RESTORED: "solve", JOB_CHECKPOINT_END: "saved", JOB_COMPLETED: "done", JOB_FAILED: "failed", ECLIPSE_ENTRY: "eclipse", ECLIPSE_EXIT: "sunlit" };
+                  if (labels[step.kind]) setNodeTone(step.focus, step.tone, labels[step.kind]);
+                }
+                if (step.kind === "SCHEDULER_DECISION") {
+                  schedulerTarget.textContent = step.focus;
+                  schedulerState.textContent = "active";
+                  if (step.previousNode) setNodeTone(step.previousNode, "green", "idle");
                 }
                 appendOutput(step.line);
-                if (idx % 3 === 0 || step.tone !== "blue") addEvent({ t: formatElapsed(elapsedS), tone: step.tone, source: step.source, text: step.line.replace(/^\$ /, "") });
+                addEvent({ t: formatElapsed(elapsedS), tone: step.tone, source: step.source, text: step.line });
                 render();
                 if (idx === replay.length - 1) {
-                  commandState.textContent = "complete";
-                  loopStatus.textContent = "Pass";
+                  commandState.textContent = executionReplay.result.converged ? "complete" : "failed";
+                  loopStatus.textContent = executionReplay.result.converged ? "Pass" : "Fail";
+                  schedulerState.textContent = executionReplay.result.converged ? "complete" : "failed";
                   stopCommandOrbitReplay();
                   addEventDivider(`END UTC ${utcForElapsed(elapsedS)}`);
-                  addEvent({ t: formatElapsed(elapsedS), tone: "blue", source: "scheduler", text: "scheduler completed Ax=b command" });
                   sendCommand.disabled = false;
                   commandTimers = [];
                 }
@@ -453,8 +372,15 @@
             viewButtons.forEach((button) => {
               button.addEventListener("click", () => {
                 cameraView = button.dataset.view;
+                canvas.setAttribute("aria-label", cameraView === "map" ? "Earth ground track map" : "3D Earth and GMAT orbit visualization");
                 applyPresetView(cameraView);
                 viewButtons.forEach((b) => b.classList.toggle("active", b === button));
+                pointerModeButtons.forEach(b => { b.disabled = cameraView === "map" && b.dataset.pointerMode === "rotate"; });
+                if (cameraView === "map") {
+                  pointerMode = "pan";
+                  pointerModeButtons.forEach(b => b.classList.toggle("active", b.dataset.pointerMode === pointerMode));
+                  updatePointerHint();
+                }
                 render();
               });
             });
@@ -488,19 +414,37 @@
           }
       
           function makeNodeCards() {
-            const soc = { sat001: "0.42", sat002: "0.58", sat003: "0.51", sat004: "0.55" };
-            const temp = { sat001: "58C", sat002: "52C", sat003: "47C", sat004: "48C" };
             nodeCards.innerHTML = nodes.map((node) => `
               <article class="node" data-card="${node}">
                 <div class="node-head"><h3>${node}</h3><span class="tag ${node === "sat001" ? "blue" : ""}">${node === "sat001" ? "alloc" : "idle"}</span></div>
-                <div class="metric"><span>SoC</span><div class="bar ${node === "sat001" ? "amber" : ""}" style="--value: ${Math.round((Number(soc[node] || .54)) * 100)}%"><span></span></div><b>${soc[node] || "0.54"}</b></div>
-                <div class="metric"><span>Thermal</span><div class="bar" style="--value: 44%"><span></span></div><b>${temp[node] || "50C"}</b></div>
+                <div class="metric" data-metric="soc"><span>SoC</span><div class="bar" style="--value:0%"><span></span></div><b>--</b></div>
+                <div class="metric" data-metric="thermal"><span>Thermal</span><div class="bar" style="--value:0%"><span></span></div><b>--</b></div>
               </article>
             `).join("");
+            updateTelemetryCards();
             renderStatusBoard();
+          }
+
+          function updateTelemetryCards() {
+            for (const card of nodeCards.querySelectorAll("[data-card]")) {
+              const state = executionReplay?.telemetryAt(card.dataset.card, simulationTimeS);
+              for (const key of ["soc", "thermal"]) {
+                const metric = card.querySelector(`[data-metric="${key}"]`);
+                const value = key === "soc" ? state?.soc : state?.temperature_c;
+                const valid = Number.isFinite(value);
+                metric.querySelector("b").textContent = valid ? key === "soc" ? `${(value * 100).toFixed(1)}%` : `${value.toFixed(1)} C` : "--";
+                metric.dataset.value = valid ? String(value) : "";
+                metric.title = state ? `${state.telemetry_source} / T+${state.simS.toFixed(1)}s` : "Telemetry unavailable";
+                const bar = metric.querySelector(".bar");
+                bar.style.setProperty("--value", `${valid ? clamp(key === "soc" ? value * 100 : value / (state.hard_limit_c || 80) * 100, 0, 100) : 0}%`);
+                const tone = !valid ? "" : key === "soc" ? value <= state.reserve_soc ? "red" : value < state.reserve_soc + 0.05 ? "amber" : "" : value >= state.hard_limit_c ? "red" : value >= state.soft_limit_c ? "amber" : "";
+                bar.className = `bar ${tone}`;
+              }
+            }
           }
       
           function addEvent(step) {
+            if (step.source === "communication") return;
             if (step.tone === "blue" && step.source !== "scheduler") return;
             eventStore.push(step);
             renderEvents();
@@ -528,7 +472,12 @@
               }
               const item = document.createElement("div");
               item.className = `event ${step.tone}`;
-              item.innerHTML = `<span class="time">${step.t}</span><span>${step.text}</span>`;
+                const time = document.createElement("span");
+                time.className = "time";
+                time.textContent = step.t;
+                const text = document.createElement("span");
+                text.textContent = step.text;
+                item.append(time, text);
               eventList.appendChild(item);
             });
           }
@@ -536,7 +485,7 @@
           function setNodeTone(node, tone, label) {
             if (!node) return;
             activeTone.set(node, tone);
-            const card = this.root.querySelector(`[data-card="${node}"]`);
+            const card = nodeCards.querySelector(`[data-card="${node}"]`);
             if (card) {
               const tag = card.querySelector(".tag");
               tag.className = `tag ${tone}`;
@@ -546,7 +495,8 @@
           }
       
           function renderStatusBoard() {
-            const relayItems = [
+            const recordedRelays = executionReplay?.bundle.communication?.relay_ids;
+            const relayItems = recordedRelays ? recordedRelays.map((id) => ({ id, tone: "green", state: "nominal" })) : executionReplay ? [] : [
               { id: "RELAY-A", tone: "green", state: "nominal" },
               { id: "RELAY-B", tone: "green", state: "nominal" }
             ];
@@ -573,6 +523,11 @@
       
           function pickSatellite(clientX, clientY) {
             const rect = canvas.getBoundingClientRect();
+            if (cameraView === "map") {
+              const node = groundTrack.pick(clientX - rect.left, clientY - rect.top);
+              if (node) { selectedNode = node; satelliteSelect.value = node; updateInspector(); render(); }
+              return;
+            }
             const w = rect.width;
             const h = rect.height;
             const cx = w * .5 + viewPan.x;
@@ -602,15 +557,18 @@
             eventList.innerHTML = "";
             commandOutput.textContent = "";
             commandState.textContent = "idle";
+            schedulerState.textContent = "ready";
+            schedulerTarget.textContent = "--";
             setClock(0);
             loopStatus.textContent = "Armed";
             updateJobStrip();
-            jobProgress.style.width = "61%";
+            jobProgress.style.width = "0%";
             activeIndex = 0;
             inspectorIndex = 0;
             activeTone = new Map([["sat001", "blue"]]);
             viewPan = { x: 0, y: 0 };
             viewZoom = 1;
+            groundTrack.reset();
             applyPresetView(cameraView);
             makeNodeCards();
             updateInspector();
@@ -694,7 +652,7 @@
           }
       
           function earthPoint(lonDeg, latDeg) {
-            const lon = lonDeg * Math.PI / 180;
+            const lon = lonDeg * Math.PI / 180 + window.GroundTrackView.siderealRadians(ephemeris.samples[0].timestamp_ms + simulationTimeS * 1000);
             const lat = latDeg * Math.PI / 180;
             return [
               EARTH_EQUATORIAL_RADIUS_KM * Math.cos(lat) * Math.cos(lon),
@@ -753,8 +711,9 @@
             globeCanvas.height = size;
             const globeCtx = globeCanvas.getContext("2d");
             const globe = globeCtx.createImageData(size, size);
-            const sun = [-0.62, -0.18, 0.76];
+            const sun = [1, 0, 0];
             const sunMag = norm(sun);
+            const sidereal = window.GroundTrackView.siderealRadians(ephemeris.samples[0].timestamp_ms + simulationTimeS * 1000);
             for (let py = 0; py < size; py += 1) {
               const sy = (py - radius) / radius;
               for (let px = 0; px < size; px += 1) {
@@ -764,7 +723,7 @@
                 if (r2 > 1) continue;
                 const sz = Math.sqrt(1 - r2);
                 const [wx, wy, wz] = inverseRotate([sx, -sy, sz]);
-                const lon = Math.atan2(wy, wx);
+                const lon = Math.atan2(wy, wx) - sidereal;
                 const lat = Math.asin(clamp(wz, -1, 1));
                 const tex = sampleEarthTexture(lon, lat);
                 const sunCos = dot([wx, wy, wz], sun) / sunMag;
@@ -866,8 +825,18 @@
             resizeCanvas();
             const rect = canvas.getBoundingClientRect();
             const w = rect.width, h = rect.height;
+            if (cameraView === "map") {
+              groundTrack.render({ ctx, width: w, height: h, ephemeris,
+                relayEphemeris: executionReplay?.bundle.communication?.ephemeris,
+                simS: simulationTimeS, tones: activeTone, grid: gridEnabled, selected: selectedNode });
+              window.dispatchEvent(new CustomEvent("oslurm:orbit-render", {
+                detail: { cameraView: "map", simulationTimeS, activeIndex }
+              }));
+              return;
+            }
             const cx = w * .5 + viewPan.x, cy = h * .52 + viewPan.y;
-            const maxRadiusKm = 9400;
+            const relaySamples = executionReplay?.bundle.communication?.ephemeris?.samples || [];
+            const maxRadiusKm = Math.max(9400, ...relaySamples.map((sample) => Math.hypot(...sample.position_eci_m) / 1000));
             const scale = Math.min(w, h) * .34 * viewZoom / maxRadiusKm;
             ctx.clearRect(0, 0, w, h);
             ctx.fillStyle = "#060911";
@@ -897,6 +866,7 @@
                 height: h,
                 cameraView,
                 activeIndex,
+                simulationTimeS,
                 sampleCount: Math.max(1, ...nodes.map((node) => (byNode.get(node) || []).length)),
                 nodes: [...nodes],
                 sampleFor,
@@ -931,6 +901,11 @@
             if (!dragState) return;
             const dx = event.clientX - dragState.x;
             const dy = event.clientY - dragState.y;
+            if (cameraView === "map") {
+              groundTrack.panBy(dx, dy);
+              dragState.x = event.clientX; dragState.y = event.clientY;
+              render(); return;
+            }
             if (dragState.mode === "pan") {
               viewPan = { x: dragState.panX + dx, y: dragState.panY + dy };
             } else {
@@ -953,31 +928,57 @@
             if (cameraView === "status") return;
             event.preventDefault();
             const factor = event.deltaY < 0 ? 1.08 : 0.92;
+            if (cameraView === "map") { groundTrack.zoomBy(factor); render(); return; }
             viewZoom = clamp(viewZoom * factor, 0.40, 2.8);
             render();
           }
       
           async function loadEphemeris() {
             try {
-              const response = await fetch("gmat-events.json", { cache: "no-store" });
-              if (!response.ok) throw new Error(`HTTP ${response.status}`);
-              ephemeris = await response.json();
-              dataSource.textContent = `GMAT ECI samples loaded: ${ephemeris.samples.length}`;
+              executionReplay = await window.ExecutionTraceReplay.load();
+            } catch (error) {
+              commandState.textContent = "trace unavailable";
+              commandOutput.textContent = error.message;
+            }
+            try {
+              if (executionReplay) {
+                ephemeris = executionReplay.bundle.ephemeris;
+                dataSource.textContent = `${executionReplay.result.gmat_backend} GMAT / ${executionReplay.result.execution_backend} / ${executionReplay.horizonS}s`;
+              } else {
+                const response = await fetch("gmat-events.json", { cache: "no-store" });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                ephemeris = await response.json();
+                dataSource.textContent = `GMAT ECI samples loaded: ${ephemeris.samples.length}`;
+              }
             } catch (error) {
               ephemeris = fallbackEphemeris;
               dataSource.textContent = `fallback ECI samples: ${error.message}`;
             }
             groupSamples(ephemeris);
+            commandInput.readOnly = true;
+            sendCommand.disabled = !executionReplay;
+            sendCommand.title = "Replay recorded execution";
+            if (executionReplay) commandState.textContent = "recorded";
+            if (executionReplay) {
+              const result = executionReplay.result;
+              root.querySelector("#backend").textContent = `GMAT ${result.gmat_backend} / ${result.execution_backend === "slurm" ? "SLURM REAL" : "LOCAL"}`;
+              root.querySelector("#schedulerPolicy").textContent = result.policy;
+              root.querySelector("#schedulerConstraint").textContent = `${result.eclipse_throughput_factor}x`;
+              root.querySelector("#schedulerConstraintLabel").textContent = result.autonomy ? "authority" : "eclipse throughput";
+              root.querySelector("#groundStatus").textContent = result.autonomy ? "connected" : "n/a";
+              root.querySelector("#schedulerRate").textContent = `${result.iterations_per_sim_s} iter/sim s`;
+            }
             setupControls();
             makeNodeCards();
             updateInspector();
             setClock(0);
             eventStore = [];
             renderEvents();
-            render();
             window.dispatchEvent(new CustomEvent("oslurm:ephemeris-loaded", {
               detail: {
                 ephemeris,
+                execution: executionReplay?.result || null,
+                communication: executionReplay?.bundle.communication || null,
                 earth: {
                   fidelity: "ellipsoid:wgs84",
                   equatorialRadiusKm: EARTH_EQUATORIAL_RADIUS_KM,
@@ -988,6 +989,7 @@
                 kmVec
               }
             }));
+            render();
           }
       
           sendCommand.addEventListener("click", runCommandSimulation);

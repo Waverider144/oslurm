@@ -68,9 +68,22 @@
       this.sampleFor = context.sampleFor;
       this.kmVec = context.kmVec;
       this.project = context.project;
+      if (context.communication) {
+        this.relaySamples = new Map();
+        for (const sample of context.communication.ephemeris.samples) {
+          if (!this.relaySamples.has(sample.node_id)) this.relaySamples.set(sample.node_id, []);
+          this.relaySamples.get(sample.node_id).push(sample);
+        }
+        for (const samples of this.relaySamples.values()) samples.sort((a, b) => a.timestamp_ms - b.timestamp_ms);
+      }
     }
 
     pointFor(nodeId, context, index = null) {
+      const relay = this.relaySamples?.get(nodeId.replace("comm:", ""));
+      if (relay?.length) {
+        const sample = relay[Math.min(relay.length - 1, index === null ? context.activeIndex || 0 : index)];
+        return this.project(this.kmVec(sample).r, context.scale, context.cx, context.cy);
+      }
       const normalized = this.normalizeComputeNode(nodeId);
       if (this.sampleFor && this.kmVec && this.project) {
         const sample = index === null ? this.sampleFor(normalized) : this.sampleFor(normalized, index);
@@ -139,6 +152,8 @@
     }
 
     relayIds(trace) {
+      if (trace.communication) return trace.communication.relay_ids;
+      if (trace.execution) return [];
       const ids = new Set(["comm:RELAY-A", "comm:RELAY-B"]);
       trace.transfers.forEach((transfer) => transfer.hops.forEach((hop) => {
         [hop.source, hop.destination].forEach((nodeId) => {
@@ -289,7 +304,7 @@
       context.ctx.font = "800 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
       context.ctx.textBaseline = "middle";
       [...endpoints].forEach((nodeId) => {
-        if (nodeId.startsWith("compute:")) return;
+        if (nodeId.startsWith("compute:") || /^sat\d/i.test(nodeId)) return;
         const point = this.projector.pointFor(nodeId, context);
         if (this.pointOccludedByEarth(context, point)) return;
         const isGround = nodeId.startsWith("ground:");
@@ -356,7 +371,7 @@
       this.bindViewState();
     }
 
-    update(trace) {
+    update(trace, simS = 0) {
       this.mount();
       const selected = this.root.querySelector("#commSelected");
       const fidelity = this.root.querySelector("#commFidelity");
@@ -364,6 +379,38 @@
       if (!selected || !list || !trace) return;
       selected.textContent = trace.selected_compute || "n/a";
       if (fidelity) fidelity.textContent = `visibility ${trace.visibility_fidelity || "ellipsoid:wgs84"}`;
+      if (trace.communication) {
+        const transfers = trace.transfers;
+        const inFlight = transfers.find((transfer) => transfer.requested_s <= simS && simS < transfer.finish_s);
+        const active = transfers.flatMap((transfer) => transfer.hops).filter((hop) => hop.start_s <= simS && simS < hop.end_s).length;
+        const reserved = transfers.filter((transfer) => transfer.requested_s <= simS && simS < transfer.finish_s).reduce((count, transfer) => count + transfer.hops.length, 0);
+        selected.textContent = inFlight ? `${inFlight.hops[0].source} > ${inFlight.hops.at(-1).destination}` : "Checkpoint network";
+        fidelity.textContent = `${reserved} reserved / ${active} active / WGS84`;
+        const status = this.root.querySelector("#commStatus");
+        if (status) status.textContent = !transfers.length ? "idle" : inFlight ? "active" : simS >= Math.max(...transfers.map(t => t.finish_s)) ? "complete" : "ready";
+        list.replaceChildren();
+        for (const transfer of transfers) {
+          const article = document.createElement("article");
+          article.className = "comm-transfer";
+          article.dataset.transferId = transfer.transfer_id;
+          const title = document.createElement("span");
+          title.textContent = transfer.transfer_id;
+          const state = document.createElement("b");
+          state.textContent = simS < transfer.requested_s ? "queued" : simS >= transfer.finish_s ? "delivered" : transfer.hops.some(h => h.start_s <= simS && simS < h.end_s) ? "transferring" : "waiting";
+          const timing = document.createElement("small");
+          timing.textContent = `${this.formatBytes(transfer.bytes)} / ${(transfer.finish_s - transfer.requested_s).toFixed(2)}s / T+${transfer.finish_s.toFixed(2)}`;
+          article.append(title, state, timing);
+          list.append(article);
+        }
+        return;
+      }
+      if (trace.execution) {
+        const status = this.root.querySelector("#commStatus");
+        if (status) status.textContent = "idle";
+        fidelity.textContent = "Shared checkpoint storage";
+        list.textContent = "Radio transfer not scheduled";
+        return;
+      }
       list.innerHTML = trace.transfers.map((transfer) => `
         <article class="comm-transfer">
           <span>${transfer.transfer_id}</span>
@@ -479,12 +526,24 @@
       window.addEventListener("oslurm:ephemeris-loaded", (event) => {
         this.projector.bind(event.detail);
         this.projector.setEarthModel(event.detail.earth);
+        if (event.detail.execution) {
+          const communication = event.detail.communication;
+          this.trace = { execution: event.detail.execution, communication,
+            transfers: communication?.transfers || [], relay_ids: communication?.relay_ids || [], selected_compute: "Not scheduled" };
+          this.panel.update(this.trace);
+        }
       });
       window.addEventListener("oslurm:orbit-render", (event) => {
+        if (event.detail.cameraView === "map") {
+          if (this.trace?.communication) this.panel.update(this.trace, event.detail.simulationTimeS || 0);
+          return;
+        }
         this.projector.bind(event.detail);
         this.renderer.draw(event.detail, this.trace);
+        if (this.trace?.communication) this.panel.update(this.trace, event.detail.simulationTimeS || 0);
       });
-      this.trace = await this.store.load();
+      const stored = await this.store.load();
+      if (!this.trace?.execution) this.trace = stored;
       this.panel.update(this.trace);
     }
   }

@@ -97,12 +97,14 @@ class FlightRecorder:
         correlation_id: str | None = None,
         parent_event_id: str | None = None,
         payload: dict[str, Any] | None = None,
+        wall_time_ns: int | None = None,
     ) -> TraceEvent:
         overhead_start = time.perf_counter_ns()
         event_value = event_type.value if isinstance(event_type, TraceEventType) else str(event_type)
         self._sequence += 1
         event_id = f"{self.run_id}:{self._sequence:012d}"
-        wall_time_ns = self._wall_epoch_ns + (time.perf_counter_ns() - self._wall_start_ns)
+        if wall_time_ns is None:
+            wall_time_ns = self._wall_epoch_ns + (time.perf_counter_ns() - self._wall_start_ns)
         category = category_for(event_value).value
         event = TraceEvent(
             schema_version=TRACE_SCHEMA_VERSION,

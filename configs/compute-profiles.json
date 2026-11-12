@@ -1,0 +1,6 @@
+{
+  "compute:SAT001": {"compute_time_s": 120, "soc": 0.80, "temperature_c": 38, "slurm_node": "sat001"},
+  "compute:SAT002": {"compute_time_s": 260, "soc": 0.75, "temperature_c": 40, "slurm_node": "sat002"},
+  "compute:SAT003": {"compute_time_s": 220, "soc": 0.70, "temperature_c": 42, "slurm_node": "sat003"},
+  "compute:SAT004": {"compute_time_s": 160, "soc": 0.65, "temperature_c": 39, "slurm_node": "sat004"}
+}

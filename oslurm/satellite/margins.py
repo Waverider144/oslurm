@@ -19,7 +19,7 @@ def normalized_margins(
     deadline_margin = max(0.0, (deadline - result.predicted_completion_ms) / max(1.0, job.runtime_s * 1000.0))
     energy_margin = max(0.0, (min_soc - intent.energy_policy.reserve_soc) / max(0.01, 1.0 - intent.energy_policy.reserve_soc))
     thermal_margin = max(0.0, (effective_thermal_limit_c - peak_temp_c) / max(1.0, effective_thermal_limit_c))
-    required_ms = int(job.runtime_s * 1000 + (0 if result.candidate.is_local else 27_000))
+    required_ms = result.predicted_completion_ms - now
     connectivity_margin = max(0.0, (resource_window_remaining_ms(now, result.candidate) - required_ms) / max(1.0, required_ms))
     worst = min(deadline_margin, energy_margin, thermal_margin, connectivity_margin)
     return DecisionMetrics(

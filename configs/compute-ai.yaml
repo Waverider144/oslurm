@@ -6,4 +6,5 @@ nodes:
   - compute:SAT003
   - compute:SAT004
 buffer_capacity_bytes: 128000000
+compute_profiles: compute-profiles.json
 notes: Four-node compute constellation for GMAT-Comm/O-SLURM co-scheduling tests.

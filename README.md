@@ -4,6 +4,37 @@ The workload manager for computers that don't stay put.
 
 ![O-SLURM mission control visualization](docs/assets/oslurm_main.png)
 
+## Current Progress
+
+- Mission Control: 3D orbital and flat-Earth ground-track views, SAT/RELAY
+  status lists, recorded full-orbit execution, separate scheduler/co-scheduler
+  panels, and evolving analytic SoC/thermal telemetry.
+- Real compute: validated matrix-free Ax=b with portable checkpoints, local or
+  four-node Slurm execution, and bounded autonomous checkpoint handoffs.
+- Joint scheduling: real mission input delivery gates worker execution;
+  measured completion replans result delivery, with ground-side hash/residual
+  validation before mission completion.
+- Dynamic communications: real GMAT compute/relay ephemerides plus rotating
+  WGS84 ground sites, sampled visibility/elevation/range windows and GMAT-Comm
+  envelope-based reservations.
+- Profiling: unified trace, `profile mission` latency attribution, worker/kernel
+  overhead separation, contact-generation costs and Perfetto exports.
+
+![O-SLURM ground-track dashboard](docs/assets/oslurm_ground_track.png)
+
+The dashboard replays a published full-orbit run; the newer single-mission joint
+runner records separate profiles and does not yet publish its trace into the
+dashboard. Radio transport is modeled with checksum-verified local file staging;
+power/thermal values are analytic, not hardware measurements. Ground rotation
+uses approximate GMST and sampled windows, not flight-grade frame transforms.
+
+Next: concurrent measured mission workers with compute-slot overrun handling,
+joint-run dashboard replay, and finer contact/frame fidelity. See
+[joint scheduling](docs/joint-scheduling.md) and [full-orbit Ax=b](docs/orbit-axb.md)
+for reproducible commands and current limits.
+
+## Overview
+
 Topology changes.
 Sunlight disappears.
 Links vanish.
@@ -225,6 +256,32 @@ The console uses aerospace-style status colors:
 
 ## Flight Recorder & Profiling
 
+For a real matrix solve spanning a full GMAT orbit, with checkpoint migration
+and a replay generated from the same run:
+
+```bash
+python3 -m pip install -r requirements.txt
+make orbit-axb
+make visualize
+```
+
+The default backend performs real numerical work locally; use
+`python3 -m oslurm.orbit_benchmark --backend slurm --publish` for real Slurm
+execution. [Full-orbit experiment](docs/orbit-axb.md) documents the clock model,
+baseline, reports, and current communication limitations. The browser replays
+recorded results; it does not submit jobs itself.
+
+Checkpoint migration now defaults to GMAT-Comm contact planning and reservations.
+Actual checkpoint bytes, relay buffer capacity, half-duplex terminal occupancy,
+acquisition, transmission, propagation and contact waiting all affect the same
+simulation clock. RELAY-A/B are propagated with GMAT. Use
+`--checkpoint-transport shared` for the zero-radio-cost baseline.
+
+The default orbit benchmark now uses the satellite-local `autonomous` policy,
+modeled battery/thermal forecasts, authority leases and peer offer/commit handoffs.
+The console adds a MAP ground-track view and replays SoC/temperature snapshots
+from the same run; model provenance is available in the metric tooltips.
+
 O-SLURM includes a structured simulation flight recorder for profiling runs. It separates wall-clock time, simulation time, and deterministic event sequence, then streams JSONL traces under `profiles/<run-id>/`.
 
 Run a real GMAT-backed satellite-autonomy profiling session through the CLI handlers:
@@ -291,6 +348,23 @@ profile off
 ```
 
 The default scenario selects `compute:SAT003` even though it is slower than `compute:SAT001`, because the relay-assisted input/result route gives the earliest end-to-end mission completion.
+
+Run `make joint-demo` for the incremental two-job scenario using both Relay-A
+and Relay-B. It now checks configured power/thermal bounds and compute queue
+availability, atomically reserves upload/downlink paths, and separates compute
+completion from ground delivery. Inspect progress with `show jobs` and decisions
+with `scheduler explain job JOB001`.
+
+`make joint-demo` models compute and radio timing. For a real Ax=b mission, run
+`make joint-axb` or `python3 -m oslurm.joint_execution --backend slurm`: the joint
+decision drives worker placement, input delivery gates execution, measured
+completion triggers downlink replanning, and the ground verifies the result.
+The single-mission runner now defaults to real GMAT-derived dynamic contact
+windows with rotating WGS84 ground sites, elevation/range/occultation checks,
+and GMAT-Comm link envelopes. Radio timing remains simulated. `profile mission`
+and `mission-profile.json` separate window waits, transfer occupancy, measured
+worker time and host-only planning costs. See
+[joint scheduling](docs/joint-scheduling.md) for configuration and limitations.
 
 ## Commands
 

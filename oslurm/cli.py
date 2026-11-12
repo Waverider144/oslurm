@@ -70,7 +70,7 @@ class OslurmCli:
 
     def _profile(self, args: list[str]) -> str:
         if not args:
-            return "usage: profile <on|off|reset|status|summary|topology|scheduler|node|job|bottleneck|failures|export|replay|timeline|cause|load>"
+            return "usage: profile <on|off|reset|status|summary|network|mission|topology|scheduler|node|job|bottleneck|failures|export|replay|timeline|cause|load>"
         command = args[0]
         if command == "on":
             run_id = option(args, "--run-id") or None
@@ -111,6 +111,8 @@ class OslurmCli:
             return format_summary(analyzer.summary())
         if command == "network":
             return format_mapping("NETWORK", analyzer.network_metrics())
+        if command == "mission":
+            return json.dumps(analyzer.mission_metrics(args[1] if len(args) > 1 else None), indent=2)
         if command == "topology":
             return format_mapping("TOPOLOGY", analyzer.topology_metrics())
         if command == "scheduler":
@@ -141,6 +143,23 @@ class OslurmCli:
         return f"unknown profile command: {command}"
 
     def _run(self, args: list[str]) -> str:
+        if args and args[0] == "joint-axb":
+            from .joint_execution import argument_parser, run_joint_axb
+
+            if self.recorder is not None:
+                raise ValueError("profile off before run joint-axb; this experiment records its own run")
+            result = run_joint_axb(self.root, **vars(argument_parser().parse_args(args[1:])))
+            self.loaded_run_dir = self.root / "profiles" / result["run_id"]
+            return json.dumps(result, indent=2)
+        if args and args[0] == "orbit-axb":
+            from .orbit_benchmark import argument_parser, run_benchmark
+
+            if self.recorder is not None:
+                raise ValueError("profile off before run orbit-axb; this benchmark records its own run")
+            options = argument_parser().parse_args(args[1:])
+            result = run_benchmark(self.root, **vars(options))
+            self.loaded_run_dir = self.root / "profiles" / result["run_id"]
+            return json.dumps(result, indent=2)
         if args and args[0][-1:] in {"h", "m", "s"}:
             return self.network.run(args[0], self.recorder)
         if self.recorder is None:
@@ -150,8 +169,10 @@ class OslurmCli:
         return f"run complete job={result['job_id']} profile={self.recorder.run_dir}"
 
     def _show(self, args: list[str]) -> str:
+        if args and args[0] == "jobs":
+            return self.network.show_jobs()
         if not args:
-            return "usage: show constellations|network|contacts|transfers|reservations"
+            return "usage: show constellations|network|contacts|transfers|reservations|jobs"
         if args[0] == "constellations":
             return self.network.show_constellations()
         if args[0] == "constellation" and len(args) >= 2:
@@ -168,6 +189,17 @@ class OslurmCli:
         return f"unknown show command: {args[0]}"
 
     def _scheduler(self, args: list[str]) -> str:
+        if len(args) >= 3 and args[:2] == ["explain", "job"]:
+            job = self.network.jobs.get(args[2])
+            if not job:
+                return f"missing job {args[2]}"
+            decision = job["decision"]
+            return json.dumps({"job_id": decision.job_id, "state": job["state"],
+                "selected_node": decision.selected_node, "compute_only_node": decision.compute_only_node,
+                "compute_start_s": decision.compute_start_s, "compute_finish_s": decision.compute_finish_s,
+                "delivery_finish_s": decision.total_finish_s, "rationale": decision.rationale,
+                "candidates": decision.candidate_reports, "input": decision.input_plan.as_dict(),
+                "result": decision.result_plan.as_dict()}, indent=2, sort_keys=True)
         if len(args) >= 2 and args[0] == "show" and args[1] == "comm":
             node = args[2] if len(args) >= 3 else ""
             return self.network.show_contacts(node) if node else self.network.show_network("comm")

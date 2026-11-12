@@ -43,6 +43,7 @@ class LocalSchedulingContext:
     reservations: list[ResourceReservation] = field(default_factory=list)
     connectivity: ConnectivityMode = ConnectivityMode.FULLY_CONNECTED
     mission_policy: MissionPolicy = field(default_factory=lambda: MissionPolicy(hardware_thermal_hard_limit_c=80.0))
+    peer_delivery_s: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

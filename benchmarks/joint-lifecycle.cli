@@ -1,0 +1,19 @@
+load constellation compute configs/compute-ai.yaml
+load constellation comm configs/relay-public.yaml
+connect constellations compute-ai relay-public
+profile on --mode full --run-id joint-lifecycle
+submit job workloads/inference.yaml
+submit job workloads/inference-followup.yaml
+show jobs
+run 1s
+show jobs
+run 269s
+show jobs
+show reservations
+run 1h
+show jobs
+show reservations
+profile network
+profile timeline JOB001
+profile timeline JOB002
+profile off

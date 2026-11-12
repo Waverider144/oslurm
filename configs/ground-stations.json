@@ -1,0 +1,8 @@
+{
+  "ground:MISSION-CONTROL": {
+    "latitude_deg": 0,
+    "longitude_deg": 0,
+    "altitude_m": 100,
+    "min_elevation_deg": 10
+  }
+}
