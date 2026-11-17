@@ -61,15 +61,15 @@
         if (kind === "SCHEDULER_DECISION") line += ` ${payload.trigger} -> ${payload.selected_action.node_id}`;
         if (payload.slurm_job_id) line += ` slurm_job=${payload.slurm_job_id}`;
         if (payload.transfer_id) line += ` ${payload.transfer_id}`;
-        if (kind === "TRANSFER_PLANNED") line += ` bytes=${payload.bytes} ready=T+${Number(payload.predicted_finish_s).toFixed(3)}s`;
+        if (kind === "TRANSFER_PLANNED") line += ` bytes=${payload.bytes ?? payload.hops?.[0]?.reserved_bytes ?? 0} ready=T+${Number(payload.predicted_finish_s).toFixed(3)}s`;
         if (kind === "LINK_RESERVATION_COMMITTED") line += ` ${payload.reservation_id} ${payload.source}>${payload.destination}`;
         if (kind === "JOB_COMPLETED") {
           progress = "100%";
-          line += ` residual=${Number(payload.relative_residual).toExponential(3)}`;
+          line += ` residual=${Number(payload.relative_residual ?? this.result.ground_relative_residual ?? this.result.relative_residual).toExponential(3)}`;
         }
         if (kind === "JOB_FAILED") line += ` ${payload.reason || "iteration budget exhausted"}`;
         return {
-          dt: simS / this.horizonS * this.durationMs,
+          dt: Math.max(0, Math.min(this.durationMs, simS / this.horizonS * this.durationMs)),
           simS, index: this.indexAt(simS), focus: node, progress,
           tone: failed || kind === "TRANSFER_FAILED" ? "red" : orbital && kind === "ECLIPSE_ENTRY" ? "amber" : scheduler ? "blue" : "green",
           source: scheduler ? "scheduler" : orbital ? "orbital" : event.source === "GMAT-Comm" ? "communication" : kind === "JOB_PROGRESS" ? "compute" : "execution",

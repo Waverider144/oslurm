@@ -20,13 +20,13 @@ def execute_segment(root: Path, run_dir: Path, index: int, segment: dict,
     ticks = run_dir / f"ticks-{index:03d}.json"
     ticks.write_text(json.dumps(segment["ticks"], indent=2), encoding="utf-8")
     if backend == "local":
-        run_segment(checkpoint, segment["ticks"], report)
+        run_segment(checkpoint, segment["ticks"], report, segment.get("solver", "python"))
     else:
         if slurm is None or slurm.status.backend != "REAL":
             raise RuntimeError("real Slurm required; no mock execution fallback")
         batch = run_dir / f"segment-{index:03d}.sh"
         command = [sys.executable, "-m", "oslurm.axb", "--checkpoint", str(checkpoint),
-                   "--ticks", str(ticks), "--report", str(report)]
+                   "--ticks", str(ticks), "--report", str(report), "--solver", segment.get("solver", "python")]
         batch.write_text("#!/bin/bash\nset -euo pipefail\ncd " + shlex.quote(str(root)) +
                          "\nexec " + shlex.join(command) + "\n", encoding="utf-8")
         env = os.environ.copy()

@@ -96,7 +96,7 @@ def run_benchmark(root: Path, *, backend: str = "local", dimension: int = 65536,
                   comm_max_range_m: float = 80_000_000, relay_buffer_mb: float = 64.0,
                   initial_soc: float = 0.42, initial_temperature_c: float = 42.0,
                   ground_disconnect_s: float = 240, authority_until_s: float | None = None,
-                  run_id: str | None = None, ephemeris: dict | None = None) -> dict:
+                  run_id: str | None = None, ephemeris: dict | None = None, decision_core: str = "python") -> dict:
     if backend not in {"local", "slurm"} or policy not in {"fixed", "eclipse", "autonomous"}:
         raise ValueError("unsupported backend or policy")
     if not math.isfinite(iteration_rate) or iteration_rate <= 0:
@@ -172,7 +172,7 @@ def run_benchmark(root: Path, *, backend: str = "local", dimension: int = 65536,
                sample["node_id"], **{k: v for k, v in sample.items() if k != "node_id"})
     telemetry = NodeTelemetry(ephemeris, record,
                               PowerConfig(initial_soc=initial_soc), ThermalConfig(initial_temperature_c=initial_temperature_c))
-    agent = OrbitAutonomy(telemetry, record, horizon, ground_disconnect_s, authority_until_s) if policy == "autonomous" else None
+    agent = OrbitAutonomy(telemetry, record, horizon, ground_disconnect_s, authority_until_s, decision_core) if policy == "autonomous" else None
     if agent and ground_disconnect_s <= horizon:
         record(ground_disconnect_s, "GROUND_CONTACT_LOSS", "MISSION_MODEL", reason="configured ground disconnect")
     previous_node = None
@@ -418,6 +418,7 @@ def run_benchmark(root: Path, *, backend: str = "local", dimension: int = 65536,
 
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--decision-core", choices=("python", "cpp"), default="python")
     parser.add_argument("--backend", choices=["local", "slurm"], default="local")
     parser.add_argument("--dimension", type=int, default=65536)
     parser.add_argument("--iteration-rate", type=float, default=0.18)

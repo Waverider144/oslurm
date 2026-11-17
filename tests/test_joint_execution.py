@@ -27,7 +27,7 @@ def trace(root):
 class JointExecutionTests(unittest.TestCase):
     def run_case(self, root, runtime=None, **kwargs):
         return run_joint_axb(root, dimension=128, run_id="test", runtime=runtime or configured_runtime(),
-                             contact_mode="fixtures", **kwargs)
+                             contact_mode="fixtures", transport="local", **kwargs)
 
     def assert_clean(self, runtime):
         self.assertTrue(all(r.state.value in {"completed", "aborted"} for r in runtime.network.reservations.values()))

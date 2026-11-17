@@ -29,7 +29,7 @@ def sha256(path: Path) -> str:
 
 
 def deliver_file(network: NetworkPlanningService, plan: TransferPlan, source: Path,
-                 destination: Path, *, now_s: float, expected_sha256: str | None = None) -> str:
+                 destination: Path, *, now_s: float, expected_sha256: str | None = None, copier=None) -> str:
     """Local verified staging, gated by a committed simulated radio delivery."""
     if now_s < plan.predicted_finish_s:
         raise ValueError("file cannot be restored before delivery")
@@ -44,7 +44,7 @@ def deliver_file(network: NetworkPlanningService, plan: TransferPlan, source: Pa
         if expected_sha256 is not None and digest != expected_sha256:
             raise ValueError("source checksum mismatch")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, temporary)
+        (copier or shutil.copyfile)(source, temporary)
         if sha256(temporary) != digest:
             raise ValueError("file checksum mismatch")
         temporary.replace(destination)

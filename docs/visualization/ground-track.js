@@ -11,12 +11,12 @@
   }
 
   function subpoint(sample) {
-    const [x, y, z] = sample.position_eci_m;
+    const [x, y, z] = sample.position_fixed_m || sample.position_eci_m;
     const p = Math.hypot(x, y), a = 6378137, b = 6356752.314245;
     const e2 = 1 - b * b / (a * a), ep2 = (a * a - b * b) / (b * b);
     const theta = Math.atan2(z * a, p * b);
     const lat = Math.atan2(z + ep2 * b * Math.sin(theta) ** 3, p - e2 * a * Math.cos(theta) ** 3);
-    return { lon: wrap((Math.atan2(y, x) - siderealRadians(sample.timestamp_ms)) * 180 / Math.PI), lat: lat * 180 / Math.PI };
+    return { lon: wrap((Math.atan2(y, x) - (sample.position_fixed_m ? 0 : siderealRadians(sample.timestamp_ms))) * 180 / Math.PI), lat: lat * 180 / Math.PI };
   }
 
   class GroundTrackView {
@@ -65,7 +65,19 @@
       if (this.texture.complete && this.texture.naturalWidth) ctx.drawImage(this.texture, bounds.x, bounds.y, mapWidth, mapHeight);
       else { ctx.fillStyle = "#173b50"; ctx.fillRect(bounds.x, bounds.y, mapWidth, mapHeight); }
       const sunLon = -siderealRadians(currentMs);
+      const frame = ephemeris.frames?.filter(f => f.timestamp_ms <= currentMs).at(-1);
       for (let lon = -180; lon < 180; lon += 4) {
+        if (frame?.sun_fixed_m) {
+          const sun = frame.sun_fixed_m, length = Math.hypot(...sun);
+          for (let lat = -90; lat < 90; lat += 4) {
+            const a = (lon+2)*Math.PI/180, b = (lat+2)*Math.PI/180;
+            const cosine = (Math.cos(b)*Math.cos(a)*sun[0] + Math.cos(b)*Math.sin(a)*sun[1] + Math.sin(b)*sun[2]) / length;
+            const alpha = clamp((0.08-cosine)/0.2,0,1)*.64;
+            if (alpha) { ctx.fillStyle=`rgba(0,0,8,${alpha})`; ctx.fillRect(bounds.x+(lon+180)/360*mapWidth,
+              bounds.y+(90-lat-4)/180*mapHeight,mapWidth/90+.5,mapHeight/45+.5); }
+          }
+          continue;
+        }
         const cosine = Math.cos((lon + 2) * Math.PI / 180 - sunLon);
         const alpha = clamp((0.08 - cosine) / 0.2, 0, 1) * 0.64;
         if (alpha) {

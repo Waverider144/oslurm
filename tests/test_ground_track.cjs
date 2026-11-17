@@ -23,4 +23,7 @@ const fixed = inertial(0, 0);
 const later = subpoint({ ...fixed, timestamp_ms: epoch + 3600000 });
 assert.ok(Math.abs(later.lon + 15.04106864) < 1e-5);
 assert.ok(Number.isFinite(angle));
+const native = subpoint({timestamp_ms:epoch, position_eci_m:[0,7000000,0], position_fixed_m:[7000000,0,0]});
+assert.equal(native.lon,0);
+assert.equal(native.lat,0);
 console.log("Ground track: WGS84 subpoints, dateline and sidereal rotation passed");

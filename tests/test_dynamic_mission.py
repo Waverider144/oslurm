@@ -81,7 +81,8 @@ class DynamicMissionTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             result = run_joint_axb(root, dimension=128, deadline_s=600, runtime=runtime,
-                ephemeris=states(), ground_stations=str(Path.cwd() / "configs/ground-stations.json"), run_id="dynamic-test")
+                ephemeris=states(), ground_stations=str(Path.cwd() / "configs/ground-stations.json"), run_id="dynamic-test",
+                contact_step_s=30, transport="local")
             self.assertEqual(result["status"], "completed", result)
             path = root / "profiles/dynamic-test"
             report = json.loads((path / "mission-profile.json").read_text())
@@ -93,6 +94,8 @@ class DynamicMissionTests(unittest.TestCase):
                 self.assertAlmostEqual(stage["link_occupied_s"], stage["serialization_s"] + stage["acquisition_s"] + stage["propagation_s"])
             self.assertTrue((path / "gmat-events.json").is_file())
             self.assertTrue((path / "contacts.json").is_file())
+            metrics = json.loads((path / "metrics.json").read_text())
+            self.assertEqual(metrics["trace_bytes_written"], (path / "events.jsonl").stat().st_size)
             perfetto = json.loads((path / "perfetto.json").read_text())["traceEvents"]
             spans = [e for e in perfetto if e["name"] == "COMPUTE_COMPLETED"]
             self.assertEqual(spans[0]["ph"], "X")

@@ -384,7 +384,7 @@
         const inFlight = transfers.find((transfer) => transfer.requested_s <= simS && simS < transfer.finish_s);
         const active = transfers.flatMap((transfer) => transfer.hops).filter((hop) => hop.start_s <= simS && simS < hop.end_s).length;
         const reserved = transfers.filter((transfer) => transfer.requested_s <= simS && simS < transfer.finish_s).reduce((count, transfer) => count + transfer.hops.length, 0);
-        selected.textContent = inFlight ? `${inFlight.hops[0].source} > ${inFlight.hops.at(-1).destination}` : "Checkpoint network";
+        selected.textContent = inFlight ? `${inFlight.hops[0].source} > ${inFlight.hops.at(-1).destination}` : trace.communication.kind || "Checkpoint network";
         fidelity.textContent = `${reserved} reserved / ${active} active / WGS84`;
         const status = this.root.querySelector("#commStatus");
         if (status) status.textContent = !transfers.length ? "idle" : inFlight ? "active" : simS >= Math.max(...transfers.map(t => t.finish_s)) ? "complete" : "ready";

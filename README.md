@@ -15,23 +15,31 @@ The workload manager for computers that don't stay put.
   measured completion replans result delivery, with ground-side hash/residual
   validation before mission completion.
 - Dynamic communications: real GMAT compute/relay ephemerides plus rotating
-  WGS84 ground sites, sampled visibility/elevation/range windows and GMAT-Comm
-  envelope-based reservations.
+  WGS84 ground sites, native EarthFixed visibility/elevation/range checks,
+  JGM2 8x8 + Sun/Luna propagation and GMAT-Comm envelope-based reservations.
+- Embedded port: bounded integer C++ decision/lease core with C ABI, event-driven
+  wakeup deadlines, RV32IMAC cross-compilation and an optional incremental C++
+  Ax=b kernel. See [flight core](flight/README.md).
 - Profiling: unified trace, `profile mission` latency attribution, worker/kernel
   overhead separation, contact-generation costs and Perfetto exports.
 
 ![O-SLURM ground-track dashboard](docs/assets/oslurm_ground_track.png)
 
-The dashboard replays a published full-orbit run; the newer single-mission joint
-runner records separate profiles and does not yet publish its trace into the
-dashboard. Radio transport is modeled with checksum-verified local file staging;
-power/thermal values are analytic, not hardware measurements. Ground rotation
-uses approximate GMST and sampled windows, not flight-grade frame transforms.
+The dashboard now replays the latest published joint mission, including actual
+input/result transfer stages and measured C++ worker completion. Payloads use
+real bounded TCP loopback with receiver checksum acknowledgement; RF link timing
+and power/thermal telemetry remain analytic, not hardware measurements. Mission
+geometry and displayed frame orientation come from GMAT native reports. This is
+a higher-fidelity model, not a flight-certified navigation system.
 
-Next: concurrent measured mission workers with compute-slot overrun handling,
-joint-run dashboard replay, and finer contact/frame fidelity. See
+Next: target-board RISC-V timing/power validation, concurrent measured mission
+workers, authenticated remote transport and sensor/covariance models. See
 [joint scheduling](docs/joint-scheduling.md) and [full-orbit Ax=b](docs/orbit-axb.md)
 for reproducible commands and current limits.
+
+Latest engineering regression record: [2026-11-17 validation](docs/validation-2026-11-17.md).
+Run `make joint-axb-cpp` to execute and publish the C++/TCP mission, and
+`make regression` for the host, cross-build, transport and browser checks.
 
 ## Overview
 

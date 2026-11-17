@@ -15,11 +15,18 @@ from .protocol import CheckpointDescriptor, ProtocolEngine, TaskCommit, TaskOffe
 
 
 class OrbitAutonomy:
-    def __init__(self, telemetry, emit, horizon_s, disconnect_s=240, authority_until_s=None):
+    def __init__(self, telemetry, emit, horizon_s, disconnect_s=240, authority_until_s=None, decision_core="python"):
         self.telemetry, self.emit, self.horizon_s = telemetry, emit, horizon_s
         self.disconnect_s = disconnect_s
         self.authority_until_s = horizon_s if authority_until_s is None else authority_until_s
-        self.schedulers = {node: DeterministicSatelliteScheduler(node) for node in telemetry.nodes}
+        scheduler = DeterministicSatelliteScheduler
+        if decision_core == "cpp":
+            from .embedded import EmbeddedSatelliteScheduler
+            scheduler = EmbeddedSatelliteScheduler
+        elif decision_core != "python":
+            raise ValueError("unsupported decision core")
+        self.decision_core = decision_core
+        self.schedulers = {node: scheduler(node) for node in telemetry.nodes}
         self.protocols = {node: ProtocolEngine() for node in telemetry.nodes}
         self.decisions = self.handoffs = 0
         self.rejections = 0
@@ -125,4 +132,5 @@ class OrbitAutonomy:
         return {"autonomous_decisions": self.decisions, "committed_handoffs": self.handoffs,
                 "candidate_rejections": self.rejections, "ground_dependent_decisions": 0,
                 "ground_disconnect_s": self.disconnect_s, "authority_until_s": self.authority_until_s,
-                "core": "DeterministicSatelliteScheduler", "protocol_transport": "in-process simulation"}
+                "core": "C++ fixed-capacity flight ABI" if self.decision_core == "cpp" else "DeterministicSatelliteScheduler",
+                "decision_core": self.decision_core, "protocol_transport": "in-process simulation"}

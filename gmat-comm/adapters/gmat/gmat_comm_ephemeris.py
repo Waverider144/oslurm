@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from oslurm.visibility import AnalyticEllipsoidVisibilityProvider, VisibilityQuery
 from oslurm.network.ground import above_mask, ground_state
+from providers.gmat.mission import fixed_site
 
 
 def norm(vec):
@@ -109,6 +110,7 @@ def interval_contacts(data: dict, max_range_m: float) -> dict:
     provider = AnalyticEllipsoidVisibilityProvider()
     pairs = {}
     sites = data.get("ground_stations", {})
+    fixed = data.get("geometry_frame") == "EarthFixed"
     elevation_rejected = range_rejected = 0
     for start, end in zip(times, times[1:]):
         common = sorted(by_time[start].keys() & by_time[end].keys())
@@ -118,11 +120,19 @@ def interval_contacts(data: dict, max_range_m: float) -> dict:
                 timestamp = start + fraction * (end - start)
                 positions = []
                 for node in (left, right):
-                    a = by_time[start][node]["position_eci_m"]
-                    b = by_time[end][node]["position_eci_m"]
-                    positions.append(ground_state(sites[node], timestamp)[0] if node in sites else
+                    key = "position_fixed_m" if fixed else "position_eci_m"
+                    a = by_time[start][node][key]
+                    b = by_time[end][node][key]
+                    positions.append(ground_state(sites[node], timestamp)[0] if node in sites and not fixed else
                                      tuple(x + fraction * (y - x) for x, y in zip(a, b)))
-                if any(node in sites and not above_mask(sites[node], timestamp, positions[1 - index])
+                def above(node, target):
+                    if not fixed:
+                        return above_mask(sites[node], timestamp, target)
+                    site, up = fixed_site(sites[node])
+                    delta = sub(target, site)
+                    return norm(delta) > 0 and sum(a * b for a, b in zip(delta, up)) / norm(delta) >= math.sin(
+                        math.radians(float(sites[node].get("min_elevation_deg", 10))))
+                if any(node in sites and not above(node, positions[1 - index])
                        for index, node in enumerate((left, right))):
                     elevation_rejected += 1
                     break
@@ -146,8 +156,8 @@ def interval_contacts(data: dict, max_range_m: float) -> dict:
                 })
     windows = slice_contacts(pairs)
     return {"adapter": "gmat_comm_ephemeris.interval_contacts", "source": "GMAT",
-            "geometry_model": "5-point piecewise-linear ECI interval visibility" +
-                ("; GMST ground rotation and elevation mask" if sites else ""),
+            "geometry_model": ("5-point GMAT EarthFixed interval visibility" if fixed else "5-point piecewise-linear ECI interval visibility") +
+                ("; fixed-frame geodetic elevation mask" if fixed else "; GMST ground rotation and elevation mask" if sites else ""),
             "contacts": windows, "metrics": {**provider.metrics.as_dict(),
                 "sampled_intervals": len(times) - 1, "window_count": len(windows),
                 "ground_elevation_rejected": elevation_rejected, "max_range_rejected": range_rejected}}

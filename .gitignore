@@ -25,6 +25,7 @@ htmlcov/
 
 # Build artifacts
 build/
+flight/build-*/
 dist/
 target/
 *.egg-info/

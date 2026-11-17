@@ -47,6 +47,13 @@ compute nodes and Relay-A/B through the mission deadline. No GMAT availability
 means a failed mission, not a silent mock or fixture fallback. Use the explicit
 `--contact-mode fixtures` only to reproduce the original static scenario.
 
+The default fidelity is now `--fidelity mission`, with native GMAT EarthFixed
+geometry and the force model described below. `--transport tcp` moves real bytes
+through bounded loopback TCP with receiver checksum acknowledgement; RF timing
+is still explicitly modeled. `--solver cpp` uses the portable C++ numerical
+kernel after `make flight-test`. Add `--publish` to update Mission Control with
+this mission's trace rather than the older full-orbit recording.
+
 1. Generate a full CG input checkpoint for the deterministic SPD system
    `tridiag(-1, 2.0001, -1)`. Reserve the actual NPZ byte count, not a dummy payload.
 2. Select a compute node and atomically reserve upload and predicted downlink.
@@ -93,6 +100,8 @@ Each run writes `profiles/joint-axb-<id>/` (or the explicit run ID), including:
 - `events.jsonl`, `manifest.json`, `metrics.json`, `perfetto.json`: unified
   profile, including `NETWORK_REPLAN` with predicted/actual completion and
   updated delivery time (or an infeasible outcome).
+- `execution-trace.json`: same-run mission replay, normalized compute/relay IDs,
+  actual input/result transfers and derived analytic power/thermal telemetry.
 
 The real mission runner is deliberately isolated to one job per invocation.
 It does not yet execute several measured workers concurrently or feed measured
@@ -105,15 +114,34 @@ minimum elevation (degrees). The supplied station is a demo equatorial site at
 0 latitude / 0 longitude, 100 m altitude and a 10-degree elevation mask; it is
 not an asserted real flight-control location. Override with `--ground-stations`.
 
-Ground sites rotate using approximate GMST. Spacecraft use GMAT's propagated
-EarthMJ2000Eq Cartesian states. This is **not** a full IAU/ITRF-to-MJ2000 frame
-transformation: precession/nutation, polar motion and UT1 corrections are not
-implemented. The approximation and source are preserved in run metadata.
+Mission fidelity reports each spacecraft in both EarthMJ2000Eq and GMAT's
+native EarthFixed frame. Ground sites are WGS84 geodetic positions in EarthFixed;
+GMAT evaluates inertial station positions via unpropagated frame-proxy objects
+whose epoch and fixed coordinates are reset at every report. Visibility and
+elevation are evaluated in EarthFixed, not an ellipsoid accidentally aligned
+with inertial axes. No hand-written GMST rotation is used in this path.
 
-The default `--contact-step-s 30` evaluates endpoints and three interior samples
-per interval. Ground positions are evaluated on the rotating ellipsoid at each
-interior sample, not linearly interpolated through the Earth. Spacecraft use
-piecewise-linear interpolation. WGS84 occultation, station elevation and maximum
+The mission force model uses JGM2 degree/order 8, Sun/Luna point masses,
+integrator accuracy 1e-12 and maximum integration step 10 s. Ground frame
+orientation and solar direction for the new viewer are derived from the same
+GMAT reports. File hashes for the packaged startup, gravity, EOP, nutation and
+leap-second inputs are retained. Runs outside packaged EOP date coverage fail
+rather than quietly relying on extrapolation. The simulated epoch remains
+2026-08-22, not the workstation's current UTC.
+
+`--fidelity demo` retains the old two-body/GMST approximation for comparison.
+Explicitly provided test ephemerides also retain their declared frame model;
+they are not mislabeled native GMAT output. `run orbit-axb` remains the legacy
+full-orbit model unless extended separately. Higher fidelity is not flight
+certification: drag/SRP, terrain masks, covariance, maneuvers and sensor fusion
+are not implemented. Eclipse telemetry uses a cylindrical shadow with the GMAT
+Sun direction; partial penumbra/atmospheric effects are unmodeled.
+
+The default `--contact-step-s 1` evaluates endpoints and three interior samples
+per interval. Native-frame ground positions remain fixed on the ellipsoid;
+demo-frame positions are evaluated on the rotating ellipsoid, not interpolated
+through the Earth. Spacecraft use piecewise-linear interpolation in the selected
+geometry frame. WGS84 occultation, station elevation and maximum
 range must pass all five tests before accepting an interval; consecutive
 accepted intervals merge into windows. Boundaries are quantized to the input
 step, not precision root-finding, and finite sampling is not a mathematical
@@ -133,7 +161,7 @@ they are not updated from live telemetry during this single-job run.
 ## Mission Profiling
 
 ```text
-run joint-axb --backend local --deadline-s 1800 --contact-step-s 30
+run joint-axb --backend local --deadline-s 1800 --contact-step-s 1 --transport tcp
 profile mission
 profile mission JOINT-AXB001
 profile network
@@ -257,10 +285,40 @@ transitions and separate compute completion from ground delivery.
 - Atomicity assumes the existing single-threaded simulator. A concurrent server
   needs serialization around planning, reservation and contact updates.
 - The real joint runner uses dynamic windows by default; explicit fixture mode
-  is retained for regression tests. Radio delays are modeled; actual payload
-  movement is local verified staging, not physical RF transmission.
-- The browser's published full-orbit trace is unchanged by either joint runner.
+  is retained for regression tests. Radio delays are modeled; payload movement
+  defaults to actual TCP loopback, with explicit `--transport local` retained as
+  a file-copy baseline. Neither backend represents physical RF transmission.
+- `--publish` replaces the dashboard's recording with the current joint mission;
+  omitting it preserves the currently published recording.
 
 The next integration boundary is handling several measured workers concurrently
 with compute-slot overruns and replanning, then improving frame transformations
 and contact-boundary refinement for higher-precision mission analysis.
+
+## Transport And Embedded Regression
+
+TCP is deliberately loopback-only: a receiver thread accepts one framed payload,
+streams at most 64 KiB at a time, verifies the declared byte count and SHA256,
+and acknowledges the digest. Headers are limited to 1024 bytes, payloads to
+256 MiB, and I/O has timeouts. Receiver completion precedes reservation completion
+and worker restore. Physical host transfer time is recorded separately from
+modeled contact/radio timing. This backend is suitable for real IP-stack
+integration tests, not an authenticated remote or encrypted RF service.
+
+The C++ decision and solver APIs, RISC-V deployment contract, memory bounds and
+remaining board-level work are documented in [flight/README.md](../flight/README.md).
+
+```bash
+make flight-test
+make flight-riscv
+make test
+make test-tcp
+make test-visualization
+make -C gmat-comm test
+# With requirements-dev.txt and system Chrome installed; local sockets required:
+make regression
+```
+
+`make regression` starts and stops its own temporary browser HTTP server. In a
+sandbox denying local sockets, TCP tests explicitly skip; rerun them with local
+network permission rather than treating a skip as a network validation pass.

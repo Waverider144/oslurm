@@ -17,6 +17,9 @@ from .network.dynamic import dynamic_network
 from .profile.analysis import ProfileAnalyzer
 from .profile.recorder import FlightRecorder, ProfilingConfig
 from .slurm_bridge import SlurmBridge
+from .profile.sinks import OrderedJsonlTraceSink
+from .joint_replay import add_telemetry, write_bundle
+from .transport import LoopbackTCPTransport
 
 
 def execute_measured(*args) -> tuple[dict, float]:
@@ -44,13 +47,16 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
                   tolerance: float = 1e-8, max_iterations: int = 20000, seed: int = 42,
                   deadline_s: float = 1800, run_id: str | None = None,
                   runtime: MultiConstellationRuntime | None = None,
-                  contact_mode: str = "gmat", contact_step_s: int = 30,
+                  contact_mode: str = "gmat", contact_step_s: int = 1,
                   ground_stations: str = "configs/ground-stations.json", bandwidth_mbps: float = 8,
-                  ephemeris: dict | None = None) -> dict:
+                  ephemeris: dict | None = None, fidelity: str = "mission", transport: str = "tcp",
+                  publish: bool = False, solver: str = "python") -> dict:
     if backend not in {"local", "slurm"} or max_iterations < 1 or not math.isfinite(deadline_s) or deadline_s <= 0:
         raise ValueError("invalid backend, iteration budget or deadline")
     if contact_mode not in {"gmat", "fixtures"} or contact_step_s <= 0:
         raise ValueError("invalid contact mode or step")
+    if transport not in {"tcp", "local"} or solver not in {"python", "cpp"}:
+        raise ValueError("unsupported file transport")
     initial = ConjugateGradient(dimension, seed, tolerance)
     root = root.resolve()
     run_id = run_id or f"joint-axb-{uuid.uuid4().hex[:12]}"
@@ -59,18 +65,22 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
     run_dir = root / "profiles" / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
     recorder = FlightRecorder(run_id=run_id, root=root, scenario="joint-real-axb", workload="CG mission",
-                              seed=seed, config=ProfilingConfig(mode="full", trace=True))
+                              seed=seed, config=ProfilingConfig(mode="full", trace=True),
+                              sink=OrderedJsonlTraceSink(run_dir / "events.jsonl"))
     job_id = "JOINT-AXB001"
     now_s = 0.0
     started = time.perf_counter()
     result = {"run_id": run_id, "job_id": job_id, "status": "failed", "backend": backend,
-              "dimension": dimension, "tolerance": tolerance,
+              "dimension": dimension, "tolerance": tolerance, "solver": solver,
               "clock_model": "1 host elapsed second = 1 simulation second after input delivery",
               "contact_model": "dynamic GMAT + rotating WGS84 ground" if contact_mode == "gmat" else
                   "configured static WGS84-visibility-gated fixtures",
-              "physical_transport": "SHA256-verified local staging; radio timing simulated"}
+              "physical_transport": "TCP loopback with receiver checksum acknowledgement; RF timing modeled" if transport == "tcp" else
+                  "SHA256-verified local staging; radio timing simulated", "transport": transport}
     network = None
     decision = None
+    states = None
+    transfers_wall_s = 0.0
 
     def emit(kind: str, at_s: float, node: str | None = None, **payload) -> None:
         recorder.emit(kind, int(at_s * 1e9), node_id=node, job_id=job_id,
@@ -78,6 +88,7 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
 
     def deliver(plan: TransferPlan, source: Path, destination: Path, digest: str,
                 stage: str, ready_s: float) -> None:
+        nonlocal transfers_wall_s
         emit("TRANSFER_STARTED", plan.hops[0].start_s, plan.hops[0].source,
              transfer_id=plan.transfer_id, path_kind=plan.path_kind.value)
         for index, hop in enumerate(plan.hops):
@@ -88,8 +99,11 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
                 emit("TRANSFER_BUFFERED", hop.end_s, hop.destination,
                      transfer_id=plan.transfer_id, buffered_bytes=hop.reserved_bytes)
         try:
+            physical_started = time.perf_counter()
             deliver_file(network, plan, source, destination, now_s=plan.predicted_finish_s,
-                         expected_sha256=digest)
+                         expected_sha256=digest, copier=LoopbackTCPTransport().copy if transport == "tcp" else None)
+            physical_wall_s = time.perf_counter() - physical_started
+            transfers_wall_s += physical_wall_s
         except Exception as exc:
             emit("TRANSFER_FAILED", plan.predicted_finish_s, reason=str(exc), transfer_id=plan.transfer_id)
             raise
@@ -99,6 +113,7 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
                      reservation_id=reservation.reservation_id, transfer_id=plan.transfer_id, state="completed")
         emit("TRANSFER_COMPLETED", plan.predicted_finish_s, plan.hops[-1].destination,
              transfer_id=plan.transfer_id, bytes=source.stat().st_size, sha256=digest,
+             physical_wall_s=physical_wall_s, transport=transport,
              stage=stage, **transfer_timing(network, plan, ready_s))
 
     try:
@@ -116,7 +131,7 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
             sites = json.loads((site_path if site_path.is_absolute() else root / site_path).read_text())
             horizon = math.ceil(deadline_s / contact_step_s) * contact_step_s
             communication, states, metadata = dynamic_network(horizon_s=horizon, step_s=contact_step_s,
-                sites=sites, bandwidth_mbps=bandwidth_mbps, ephemeris=ephemeris)
+                sites=sites, bandwidth_mbps=bandwidth_mbps, ephemeris=ephemeris, fidelity=fidelity)
             runtime.network = communication.network
             runtime.contact_metadata = metadata
             (run_dir / "gmat-events.json").write_text(json.dumps(states), encoding="utf-8")
@@ -151,7 +166,7 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
         runtime.jobs[job_id]["state"] = "computing"
         launch_wall_ns = time.time_ns()
         data, elapsed_s = execute_measured(root, run_dir, 0,
-            {"node": worker_node, "ticks": [{"iterations": max_iterations, "sim_s": None}]}, checkpoint, backend, slurm)
+            {"node": worker_node, "solver": solver, "ticks": [{"iterations": max_iterations, "sim_s": None}]}, checkpoint, backend, slurm)
         if not math.isfinite(elapsed_s) or elapsed_s < 0:
             raise ValueError("invalid measured execution duration")
         now_s += elapsed_s
@@ -230,6 +245,9 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
                                        "state": r.state.value, "hop": r.hop.__dict__}
                                       for r in network.reservations.values()]
         result["elapsed_wall_s"] = time.perf_counter() - started
+        result["physical_transfer_wall_s"] = transfers_wall_s
+        if states is not None:
+            add_telemetry(recorder, states, result, decision, now_s, runtime.compute_profiles)
         recorder.close(round(now_s * 1e9))
         manifest_path = run_dir / "manifest.json"
         manifest = json.loads(manifest_path.read_text())
@@ -244,6 +262,8 @@ def run_joint_axb(root: Path, *, backend: str = "local", dimension: int = 65536,
         analyzer = ProfileAnalyzer(run_dir)
         analyzer.export_perfetto(run_dir / "perfetto.json", time_axis="simulation")
         (run_dir / "mission-profile.json").write_text(json.dumps(analyzer.mission_metrics(), indent=2), encoding="utf-8")
+        if states is not None and decision:
+            write_bundle(run_dir, states, result, root / "docs/visualization/execution-trace.json" if publish else None)
     return result
 
 
@@ -257,9 +277,13 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--deadline-s", type=float, default=1800)
     parser.add_argument("--run-id")
     parser.add_argument("--contact-mode", choices=("gmat", "fixtures"), default="gmat")
-    parser.add_argument("--contact-step-s", type=int, default=30)
+    parser.add_argument("--contact-step-s", type=int, default=1)
     parser.add_argument("--ground-stations", default="configs/ground-stations.json")
     parser.add_argument("--bandwidth-mbps", type=float, default=8)
+    parser.add_argument("--fidelity", choices=("mission", "demo"), default="mission")
+    parser.add_argument("--transport", choices=("tcp", "local"), default="tcp")
+    parser.add_argument("--publish", action="store_true")
+    parser.add_argument("--solver", choices=("python", "cpp"), default="python")
     return parser
 
 

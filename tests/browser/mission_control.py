@@ -3,6 +3,9 @@ import argparse
 import copy
 import json
 from pathlib import Path
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import threading
 
 from playwright.sync_api import sync_playwright
 
@@ -17,7 +20,16 @@ def check(url, assets_dir=None):
         page.goto(url, wait_until="networkidle")
         page.wait_for_function("document.querySelector('#commandState').textContent === 'recorded'")
         bundle = page.evaluate("fetch('execution-trace.json').then(r=>r.json())")
-        assert bundle["result"]["autonomy"]["autonomous_decisions"] > 0
+        joint = bundle["result"].get("mission_kind") == "joint-axb"
+        if joint:
+            assert bundle["result"]["status"] == "completed"
+            assert bundle["result"]["transport"] == "tcp"
+            assert "oslurm.joint_execution" in page.locator("#commandInput").input_value()
+            assert bundle["result"]["job_id"] in page.locator("#jobMeta").text_content()
+            assert page.locator("#schedulerRateLabel").text_content() == "worker elapsed"
+            assert page.locator('[data-card="sat001"] .tag').text_content() == "idle"
+        else:
+            assert bundle["result"]["autonomy"]["autonomous_decisions"] > 0
         assert page.locator("#satelliteSelect option").count() == 4
         assert all("--" not in text for text in page.locator("#nodeCards .metric b").all_text_contents())
         initial_soc = page.locator('[data-card="sat001"] [data-metric="soc"]').get_attribute("data-value")
@@ -50,7 +62,7 @@ def check(url, assets_dir=None):
         page.clock.fast_forward(15000)
         assert canvas.screenshot() != before
         assert canvas.bounding_box() == bounds
-        assert page.locator("#groundStatus").text_content() == "disconnected"
+        assert page.locator("#groundStatus").text_content() == ("n/a" if joint else "disconnected")
         assert page.locator("#orbitalGrid").inner_text() == inspector
         assert page.locator('[data-card="sat001"] [data-metric="soc"]').get_attribute("data-value") != initial_soc
         assert page.locator('[data-card="sat001"] [data-metric="thermal"]').get_attribute("data-value") != initial_thermal
@@ -109,7 +121,7 @@ def check(url, assets_dir=None):
         assert missing_page.locator('[data-card="sat001"] [data-metric="soc"] b').text_content() != "--"
         assert not errors, errors
         browser.close()
-        return {"autonomy": bundle["result"]["autonomy"], "map": "selection/animation/zoom/pan passed",
+        return {"mission": bundle["result"].get("mission_kind", "orbit"), "autonomy": bundle["result"].get("autonomy"), "map": "selection/animation/zoom/pan passed",
                 "telemetry": "initial/evolution/reset/missing-data passed", "browser_errors": errors}
 
 
@@ -117,5 +129,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8081/")
     parser.add_argument("--assets-dir", type=Path)
+    parser.add_argument("--serve", action="store_true", help="Start a temporary local HTTP server for regression")
     args = parser.parse_args()
-    print(json.dumps(check(args.url, args.assets_dir)))
+    if args.serve:
+        handler = partial(SimpleHTTPRequestHandler, directory=str(Path(__file__).resolve().parents[2] / "docs/visualization"))
+        with ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                print(json.dumps(check(f"http://127.0.0.1:{server.server_port}/", args.assets_dir)))
+            finally:
+                server.shutdown()
+                thread.join()
+    else:
+        print(json.dumps(check(args.url, args.assets_dir)))

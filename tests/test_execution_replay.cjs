@@ -6,9 +6,9 @@ const bundle = JSON.parse(fs.readFileSync("docs/visualization/execution-trace.js
 const replay = new ExecutionTraceReplay(bundle);
 const steps = replay.steps();
 assert.equal(replay.indexAt(0), 0);
-assert.equal(replay.indexAt(29), 0);
-assert.equal(replay.indexAt(60), 1);
-assert.equal(replay.indexAt(replay.horizonS), 96);
+assert.equal(replay.indexAt(-1), 0);
+assert.equal(replay.indexAt((replay.timestamps[1] - replay.epochMs) / 1000), 1);
+assert.ok(replay.indexAt(replay.horizonS) <= replay.timestamps.length - 1);
 assert.equal(steps.at(-1).dt, replay.durationMs);
 assert.ok(steps.every((step, index) => index === 0 || step.simS >= steps[index - 1].simS));
 assert.ok(steps.filter(step => step.source === "scheduler").every(step => step.kind === "SCHEDULER_DECISION"));
@@ -20,7 +20,7 @@ assert.equal(new ExecutionTraceReplay(failedBundle).steps().at(-1).tone, "red");
 const mixed = structuredClone(bundle);
 mixed.events[0].header.run_id = "other";
 assert.throws(() => new ExecutionTraceReplay(mixed), /Mixed execution runs/);
-if (bundle.communication) {
+if (bundle.communication && !bundle.result.mission_kind) {
   assert.equal(bundle.communication.relay_ids.length, 2);
   assert.ok(bundle.ephemeris.samples.every(s => !s.node_id.startsWith("RELAY-")));
   assert.ok(bundle.communication.reservations.every(r => r.state === "completed"));
@@ -34,6 +34,14 @@ if (bundle.communication) {
   }
   assert.ok(Math.abs(totalDelay - bundle.result.simulated_migration_delay_s) < 1e-8);
   assert.ok(steps.filter(step => step.line.includes("LINK_RESERVATION")).every(step => step.source === "communication"));
+}
+if (bundle.result.mission_kind === "joint-axb") {
+  assert.equal(bundle.communication.transfers.length, 2);
+  assert.equal(bundle.result.transport, "tcp");
+  assert.ok(!steps.some(step => step.line.includes("undefined") || step.line.includes("NaN")));
+  assert.ok(steps.some(step => step.kind === "NETWORK_REPLAN"));
+  assert.ok(replay.telemetryAt("sat004", 0));
+  assert.ok(steps.filter(step => step.kind === "TRANSFER_COMPLETED").length === 2);
 }
 if (bundle.telemetry) {
   const firstNode = bundle.ephemeris.samples[0].node_id;

@@ -108,12 +108,21 @@ class ConjugateGradient:
             return solver
 
 
-def run_segment(checkpoint: Path, ticks: list[dict], report: Path) -> None:
+def run_segment(checkpoint: Path, ticks: list[dict], report: Path, solver_backend: str = "python") -> None:
+    if solver_backend not in {"python", "cpp"}:
+        raise ValueError("unsupported solver backend")
     solver = ConjugateGradient.load(checkpoint)
     progress = []
     for tick in ticks:
         started_ns = time.time_ns()
-        result = solver.advance(tick["iterations"])
+        if solver_backend == "cpp":
+            from .cpp import advance_cg
+            kernel_start = time.perf_counter_ns()
+            advance_cg(solver, tick["iterations"])
+            result = solver.advance(0)
+            result["compute_wall_ns"] = time.perf_counter_ns() - kernel_start
+        else:
+            result = solver.advance(tick["iterations"])
         result.update(sim_s=tick["sim_s"], worker_wall_start_ns=started_ns,
                       worker_wall_end_ns=time.time_ns())
         progress.append(result)
@@ -122,6 +131,7 @@ def run_segment(checkpoint: Path, ticks: list[dict], report: Path) -> None:
     solver.save(checkpoint)
     report.write_text(json.dumps({
         "hostname": socket.gethostname(), "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "solver_backend": solver_backend,
         "slurm_node": os.environ.get("SLURMD_NODENAME"), "progress": progress,
     }, indent=2), encoding="utf-8")
 
@@ -131,8 +141,9 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--ticks", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--solver", choices=("python", "cpp"), default="python")
     args = parser.parse_args()
-    run_segment(args.checkpoint, json.loads(args.ticks.read_text()), args.report)
+    run_segment(args.checkpoint, json.loads(args.ticks.read_text()), args.report, args.solver)
 
 
 if __name__ == "__main__":

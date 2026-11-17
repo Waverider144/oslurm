@@ -65,7 +65,7 @@
           let activeIndex = 0;
           let simulationTimeS = 0;
           let inspectorIndex = 0;
-          let activeTone = new Map([["sat001", "blue"]]);
+          let activeTone = new Map();
           let statusMode = "sat";
           let cameraView = "iso";
           let viewPan = { x: 0, y: 0 };
@@ -208,6 +208,12 @@
           function slurmTemplate(node) {
             if (!executionReplay) return "";
             const result = executionReplay.result;
+            if (result.mission_kind === "joint-axb") return [
+              "#!/usr/bin/env bash", `# run_id=${result.run_id}`, `# ${result.physical_transport}`,
+              "python3 -m oslurm.joint_execution \\",
+              `  --backend ${result.execution_backend} --dimension ${result.dimension} \\`,
+              `  --tolerance ${result.tolerance} --solver ${result.solver || "python"} --transport ${result.transport} --publish`
+            ].join("\n");
             return [
               "#!/usr/bin/env bash",
               `# run_id=${result.run_id}`,
@@ -250,12 +256,12 @@
           }
 
           function commandJobName() {
-            return parseDirective(commandInput.value, "job-name") || `oslurm-${selectedNode}-orbit-profile-axb`;
+            return executionReplay?.result.job_id || parseDirective(commandInput.value, "job-name") || `oslurm-${selectedNode}-orbit-profile-axb`;
           }
 
           function updateJobStrip(jobName = commandJobName()) {
             const count = gmatSatelliteCount();
-            jobTitle.textContent = executionReplay ? `Ax=b ON ${count} SATELLITES` : `PARALLELISM ON ${count} SATELLITES`;
+            jobTitle.textContent = executionReplay?.result.mission_kind ? `Ax=b ON ${executionReplay.result.selected_node.split(":").at(-1)}` : executionReplay ? `Ax=b ON ${count} SATELLITES` : `PARALLELISM ON ${count} SATELLITES`;
             jobMeta.textContent = `${jobName} / ${count} GMAT satellites`;
           }
       
@@ -335,7 +341,7 @@
                 activeIndex = Math.max(0, Math.min(sampleCount - 1, orbitIndex));
                 setClock(elapsedS);
                 if (step.focus) {
-                  const labels = { JOB_PROGRESS: "solve", JOB_STARTED: "solve", JOB_RESTORED: "solve", JOB_CHECKPOINT_END: "saved", JOB_COMPLETED: "done", JOB_FAILED: "failed", ECLIPSE_ENTRY: "eclipse", ECLIPSE_EXIT: "sunlit" };
+                  const labels = { JOB_PROGRESS: "solve", JOB_STARTED: "solve", COMPUTE_COMPLETED: "computed", JOB_RESTORED: "solve", JOB_CHECKPOINT_END: "saved", JOB_COMPLETED: "done", JOB_FAILED: "failed", ECLIPSE_ENTRY: "eclipse", ECLIPSE_EXIT: "sunlit" };
                   if (labels[step.kind]) setNodeTone(step.focus, step.tone, labels[step.kind]);
                 }
                 if (step.kind === "SCHEDULER_DECISION") {
@@ -416,7 +422,7 @@
           function makeNodeCards() {
             nodeCards.innerHTML = nodes.map((node) => `
               <article class="node" data-card="${node}">
-                <div class="node-head"><h3>${node}</h3><span class="tag ${node === "sat001" ? "blue" : ""}">${node === "sat001" ? "alloc" : "idle"}</span></div>
+                <div class="node-head"><h3>${node}</h3><span class="tag">idle</span></div>
                 <div class="metric" data-metric="soc"><span>SoC</span><div class="bar" style="--value:0%"><span></span></div><b>--</b></div>
                 <div class="metric" data-metric="thermal"><span>Thermal</span><div class="bar" style="--value:0%"><span></span></div><b>--</b></div>
               </article>
@@ -565,7 +571,7 @@
             jobProgress.style.width = "0%";
             activeIndex = 0;
             inspectorIndex = 0;
-            activeTone = new Map([["sat001", "blue"]]);
+            activeTone = new Map();
             viewPan = { x: 0, y: 0 };
             viewZoom = 1;
             groundTrack.reset();
@@ -652,13 +658,15 @@
           }
       
           function earthPoint(lonDeg, latDeg) {
-            const lon = lonDeg * Math.PI / 180 + window.GroundTrackView.siderealRadians(ephemeris.samples[0].timestamp_ms + simulationTimeS * 1000);
+            const frame = ephemeris.frames?.[Math.min(activeIndex, ephemeris.frames.length - 1)];
+            const lon = lonDeg * Math.PI / 180 + (frame ? 0 : window.GroundTrackView.siderealRadians(ephemeris.samples[0].timestamp_ms + simulationTimeS * 1000));
             const lat = latDeg * Math.PI / 180;
-            return [
+            const point = [
               EARTH_EQUATORIAL_RADIUS_KM * Math.cos(lat) * Math.cos(lon),
               EARTH_EQUATORIAL_RADIUS_KM * Math.cos(lat) * Math.sin(lon),
               EARTH_POLAR_RADIUS_KM * Math.sin(lat)
             ];
+            return frame ? frame.fixed_to_eci.map(row => dot(row, point)) : point;
           }
       
           function drawSurfaceLine(points, scale, cx, cy) {
@@ -711,7 +719,8 @@
             globeCanvas.height = size;
             const globeCtx = globeCanvas.getContext("2d");
             const globe = globeCtx.createImageData(size, size);
-            const sun = [1, 0, 0];
+            const frame = ephemeris.frames?.[Math.min(activeIndex, ephemeris.frames.length - 1)];
+            const sun = frame?.sun_eci_m || [1, 0, 0];
             const sunMag = norm(sun);
             const sidereal = window.GroundTrackView.siderealRadians(ephemeris.samples[0].timestamp_ms + simulationTimeS * 1000);
             for (let py = 0; py < size; py += 1) {
@@ -723,8 +732,9 @@
                 if (r2 > 1) continue;
                 const sz = Math.sqrt(1 - r2);
                 const [wx, wy, wz] = inverseRotate([sx, -sy, sz]);
-                const lon = Math.atan2(wy, wx) - sidereal;
-                const lat = Math.asin(clamp(wz, -1, 1));
+                const fixed = frame ? [0,1,2].map(i => frame.fixed_to_eci.reduce((sum, row, j) => sum + row[i]*[wx,wy,wz][j], 0)) : [wx,wy,wz];
+                const lon = Math.atan2(fixed[1], fixed[0]) - (frame ? 0 : sidereal);
+                const lat = Math.asin(clamp(fixed[2], -1, 1));
                 const tex = sampleEarthTexture(lon, lat);
                 const sunCos = dot([wx, wy, wz], sun) / sunMag;
                 const day = clamp((sunCos + 0.10) / 0.38, 0, 1);
@@ -943,7 +953,7 @@
             try {
               if (executionReplay) {
                 ephemeris = executionReplay.bundle.ephemeris;
-                dataSource.textContent = `${executionReplay.result.gmat_backend} GMAT / ${executionReplay.result.execution_backend} / ${executionReplay.horizonS}s`;
+                dataSource.textContent = `${executionReplay.result.gmat_backend} GMAT / ${executionReplay.result.execution_backend} / ${executionReplay.horizonS.toFixed(2)}s`;
               } else {
                 const response = await fetch("gmat-events.json", { cache: "no-store" });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -963,10 +973,11 @@
               const result = executionReplay.result;
               root.querySelector("#backend").textContent = `GMAT ${result.gmat_backend} / ${result.execution_backend === "slurm" ? "SLURM REAL" : "LOCAL"}`;
               root.querySelector("#schedulerPolicy").textContent = result.policy;
-              root.querySelector("#schedulerConstraint").textContent = `${result.eclipse_throughput_factor}x`;
-              root.querySelector("#schedulerConstraintLabel").textContent = result.autonomy ? "authority" : "eclipse throughput";
+              root.querySelector("#schedulerConstraint").textContent = result.mission_kind ? result.transport : `${result.eclipse_throughput_factor}x`;
+              root.querySelector("#schedulerConstraintLabel").textContent = result.mission_kind ? "transport" : result.autonomy ? "authority" : "eclipse throughput";
               root.querySelector("#groundStatus").textContent = result.autonomy ? "connected" : "n/a";
-              root.querySelector("#schedulerRate").textContent = `${result.iterations_per_sim_s} iter/sim s`;
+              root.querySelector("#schedulerRate").textContent = result.mission_kind ? `${Number(result.execution_elapsed_s || 0).toFixed(3)}s measured` : `${result.iterations_per_sim_s} iter/sim s`;
+              root.querySelector("#schedulerRateLabel").textContent = result.mission_kind ? "worker elapsed" : "modeled rate";
             }
             setupControls();
             makeNodeCards();

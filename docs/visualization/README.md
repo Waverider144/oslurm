@@ -96,8 +96,10 @@ The explicit `shared` baseline has no radio reservations and remains idle.
 
 The MAP view uses the existing Earth image and the same run's satellite/relay
 samples. It renders a longitude/latitude flight-control display with solid past
-and dashed future tracks. Longitude uses GMST at the actual sample UTC; latitude
-uses WGS84 geodetic coordinates. The 3D grid/texture use the same Earth orientation.
+and dashed future tracks. Native mission recordings use GMAT EarthFixed samples
+for WGS84 subpoints and reported fixed-to-inertial rotations for the 3D grid and
+texture. Sun direction comes from the same GMAT run. Legacy/demo recordings use
+the previous GMST fallback. No native recording is re-rotated using that fallback.
 
 SoC/Thermal cards now consume `NODE_OPERATING_SNAPSHOT` events through
 `ExecutionTraceReplay.telemetryAt(node, simulationTimeS)`. They select the latest
